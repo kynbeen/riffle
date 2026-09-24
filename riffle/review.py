@@ -70,6 +70,8 @@ def review(inspection: dict) -> dict:
                           "reason": reason})
     return {
         "items": items,
+        # 필기 없는 옛 쪽. 화면에서 짝을 바꿔 밀려난 옛 쪽을 남길지(필기 있음) 뺄지(없음) 여기로 안다.
+        "blank_sources": sorted(blank),
         "summary": {
             "matched": matched,                     # 옛 쪽과 새 쪽을 짝지은 수
             "automatic": matched - sum(1 for item in items if item["target_index"] is not None

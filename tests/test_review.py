@@ -42,6 +42,7 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual((summary["matched"], summary["automatic"], summary["new_pages"],
                           summary["kept_old"], summary["omitted"]), (3, 1, 1, 1, 1))
         self.assertEqual(summary["result_pages"], 5)
+        self.assertEqual(result["blank_sources"], [4])
 
     def test_panel_ink_wins_over_other_reasons(self):
         result = review(inspection([slot(0, 0, distance=0.9)], panel={0}))

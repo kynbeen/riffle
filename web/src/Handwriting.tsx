@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { backend, type HandwritingStatus, type PlanRow, type PlanSlot, type Preview, type Saved } from './api'
-import { footnotes, headline, REASON_WORDS, type Review, type ReviewItem } from './reasons'
+import { reassign, targetOf, type Slot } from './plan'
+import { footnotes, headline, REASON_WORDS, type Reason, type Review, type ReviewSummary } from './reasons'
 
 // 필기 옮기기 — 확인할 쪽만(명세 2026-09-24-01). 기계가 자신 있게 맞춘 쪽은 목록에 없고,
 // 모든 쪽은 궁금할 때만 펼쳐 본다.
@@ -50,7 +51,7 @@ export default function Handwriting({ source, target }: { source: string; target
           <div><button className="button" onClick={async () => { await backend.retryHandwriting(); setRetries((n) => n + 1) }}>다시 시도</button></div>
         </>
       ) : analysis?.state === 'ready' && status?.review && status.inspection?.plan ? (
-        <Ready review={status.review} slots={status.inspection.plan.slots} source={source} />
+        <Ready review={status.review} initial={status.inspection.plan.slots} source={source} />
       ) : (
         <div className="status t-body"><span className="spinner" aria-hidden /><span>{STAGE_WORDS[analysis?.stage ?? 'waiting'] ?? '맞추는 중'}</span></div>
       )}
@@ -58,26 +59,68 @@ export default function Handwriting({ source, target }: { source: string; target
   )
 }
 
-function Ready({ review, slots, source }: { review: Review; slots: PlanSlot[]; source: string }) {
-  const attention = useMemo(() => new Map(review.items.map((item) => [item.slot, item])), [review])
+// 지금 대응으로 센 요약. 짝을 바꾸면 숫자도 바뀐다.
+function tally(slots: Slot[], reasons: Record<number, Reason>, marks: Record<number, Mark>,
+               blank: Set<number>, base: ReviewSummary): ReviewSummary & { checked: number; dropped: number } {
+  let automatic = 0, keptOld = 0, omitted = 0, newPages = 0, dropped = 0, checked = 0, resultPages = 0
+  for (const slot of slots) {
+    const s = slot.source_index
+    const watched = s !== null && s in reasons
+    const mark = watched ? marks[s!] : undefined
+    if (mark === 'excluded') { dropped += 1; continue }
+    if (mark === 'ok') checked += 1
+    if (s !== null && slot.target_index !== null) { if (!watched) automatic += 1 }
+    else if (s === null) newPages += 1
+    else if (blank.has(s)) { omitted += 1; continue }
+    else keptOld += 1
+    resultPages += 1
+  }
+  return { ...base, automatic, attention: Object.keys(reasons).length, new_pages: newPages, kept_old: keptOld,
+           omitted, result_pages: resultPages, checked, dropped }
+}
+
+function Ready({ review, initial, source }: { review: Review; initial: PlanSlot[]; source: string }) {
+  const blank = useMemo(() => new Set(review.blank_sources), [review])
+  const [slots, setSlots] = useState<Slot[]>(() => initial.map(({ source_index, target_index }) => ({ source_index, target_index })))
+  // 확인할 옛 쪽 → 이유. 카드 순서는 order 가 쥔다(짝을 바꾸면 밀려난 옛 쪽이 새 카드로 붙는다).
+  const [reasons, setReasons] = useState<Record<number, Reason>>(
+    () => Object.fromEntries(review.items.map((item) => [item.source_index!, item.reason])))
+  const [order, setOrder] = useState<number[]>(() => review.items.map((item) => item.source_index!))
   const [marks, setMarks] = useState<Record<number, Mark>>(
-    () => Object.fromEntries(review.items.map((item) => [item.slot, 'open' as Mark])))
+    () => Object.fromEntries(review.items.map((item) => [item.source_index!, 'open' as Mark])))
+  const [chosen, setChosen] = useState<Set<number>>(new Set())      // 사람이 직접 짝을 고른 옛 쪽
   const [asking, setAsking] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<Saved | null>(null)
   const [error, setError] = useState('')
   const [showAll, setShowAll] = useState(false)
-  const open = review.items.filter((item) => marks[item.slot] === 'open').length
+  const thumbnails = useRef(new Map<number, string>())
+  const targetCount = slots.filter((slot) => slot.target_index !== null).length
 
-  // 저장할 쪽 대응. 확인할 쪽이 아닌 것은 기계가 맞춘 대로 두고, 필기 없는 옛 쪽은 뺀다(review.py 가 부르지 않은 옛 쪽 전용).
-  const plan = (): PlanRow[] => slots.map((slot, position) => {
-    const mark = marks[position]
-    if (attention.has(position)) {
-      return { source_index: slot.source_index, target_index: slot.target_index,
-               confirmed: mark === 'ok', excluded: mark === 'excluded' }
+  const open = order.filter((s) => marks[s] === 'open').length
+  const counts = tally(slots, reasons, marks, blank, review.summary)
+
+  const pick = (s: number, target: number) => {
+    const { slots: next, displaced } = reassign(slots, s, target)
+    setSlots(next)
+    setMarks((prev) => ({ ...prev, [s]: 'ok' }))
+    setChosen((prev) => new Set(prev).add(s))
+    if (displaced !== null && !blank.has(displaced)) {
+      // 밀려난 옛 쪽에 필기가 있으면 옛 쪽째 남기고 사람이 보게 한다 — 조용히 다른 새 쪽으로 옮기지 않는다.
+      setReasons((prev) => ({ ...prev, [displaced]: 'old_only' }))
+      setMarks((prev) => ({ ...prev, [displaced]: 'open' }))
+      setOrder((prev) => prev.includes(displaced) ? prev : [...prev.slice(0, prev.indexOf(s) + 1), displaced, ...prev.slice(prev.indexOf(s) + 1)])
+      setChosen((prev) => { const next = new Set(prev); next.delete(displaced); return next })
     }
-    const blankOld = slot.target_index === null
-    return { source_index: slot.source_index, target_index: slot.target_index, confirmed: true, excluded: blankOld }
+  }
+
+  // 저장할 쪽 대응. 확인할 쪽이 아닌 것은 기계가 맞춘 대로 두고, 필기 없는 옛 쪽은 뺀다.
+  const plan = (): PlanRow[] => slots.map((slot) => {
+    const s = slot.source_index
+    if (s !== null && s in reasons) {
+      return { ...slot, confirmed: marks[s] === 'ok', excluded: marks[s] === 'excluded' }
+    }
+    return { ...slot, confirmed: true, excluded: s !== null && slot.target_index === null && blank.has(s) }
   })
 
   const save = async (allowUnconfirmed: boolean) => {
@@ -95,25 +138,25 @@ function Ready({ review, slots, source }: { review: Review; slots: PlanSlot[]; s
     }
   }
 
-  const s = review.summary
-  const excluded = Object.values(marks).filter((mark) => mark === 'excluded').length
   return (
     <>
-      <div className="t-title headline">{headline(s, open)}</div>
-      {footnotes(s).map((note) => <div className="t-caption" key={note}>{note}</div>)}
+      <div className="t-title headline">{headline(counts, open)}</div>
+      {footnotes(counts).map((note) => <div className="t-caption" key={note}>{note}</div>)}
 
-      {review.items.length > 0 && (
+      {order.length > 0 && (
         <div className="cards">
-          {review.items.map((item) => (
-            <Card key={item.slot} item={item} mark={marks[item.slot]}
-              onMark={(mark) => setMarks((prev) => ({ ...prev, [item.slot]: mark }))} />
+          {order.map((s) => (
+            <Card key={s} source={s} target={targetOf(slots, s)} reason={reasons[s]} mark={marks[s]}
+              chosen={chosen.has(s)} targetCount={targetCount} thumbnails={thumbnails.current}
+              onMark={(mark) => setMarks((prev) => ({ ...prev, [s]: mark }))}
+              onPick={(target) => pick(s, target)} />
           ))}
         </div>
       )}
 
       <details className="all" open={showAll} onToggle={(event) => setShowAll((event.target as HTMLDetailsElement).open)}>
         <summary className="t-body">모든 쪽 보기 ({slots.length})</summary>
-        {showAll && <AllPages slots={slots} attention={attention} marks={marks} />}
+        {showAll && <AllPages slots={slots} reasons={reasons} marks={marks} blank={blank} chosen={chosen} />}
       </details>
 
       {error && <div className="message error t-body">{error}</div>}
@@ -121,7 +164,7 @@ function Ready({ review, slots, source }: { review: Review; slots: PlanSlot[]; s
         <div className="saved">
           <div className="t-body"><b>저장했습니다</b>{saved.name ? ` · ${saved.name}` : ''}</div>
           <div className="t-caption">
-            {`자동 ${s.automatic} · 확인 ${s.attention - open - excluded} · 옛 쪽째 남김 ${s.kept_old} · 뺀 쪽 ${s.omitted + excluded}`}
+            {`자동 ${counts.automatic} · 확인 ${counts.checked} · 옛 쪽째 남김 ${counts.kept_old} · 뺀 쪽 ${counts.omitted + counts.dropped}`}
           </div>
           {(saved.warnings ?? [])
             // 확인하지 않고 저장한 쪽 수는 위 요약 줄이 이미 말한다 — 옛 화면용 문장을 되풀이하지 않는다.
@@ -157,32 +200,40 @@ function Ready({ review, slots, source }: { review: Review; slots: PlanSlot[]; s
   )
 }
 
-function Card({ item, mark, onMark }: { item: ReviewItem; mark: Mark; onMark: (mark: Mark) => void }) {
+function Card({ source, target, reason, mark, chosen, targetCount, thumbnails, onMark, onPick }: {
+  source: number; target: number | null; reason: Reason; mark: Mark; chosen: boolean; targetCount: number
+  thumbnails: Map<number, string>; onMark: (mark: Mark) => void; onPick: (target: number) => void
+}) {
   // 옛 쪽은 옛 쪽 자체의 틀로(옛 필기 그대로), 새 쪽은 새 틀에 옮긴 필기로 — 필기본처럼 새 쪽이 넓어도
   // 옛 쪽이 작게 쪼그라들지 않는다.
   const [oldView, setOldView] = useState<Preview | null>(null)
   const [newView, setNewView] = useState<Preview | null>(null)
   const [failed, setFailed] = useState('')
+  const [picking, setPicking] = useState(false)
   useEffect(() => {
     let alive = true
-    const fail = (error: Error) => { if (alive) setFailed(error.message) }
-    if (item.source_index !== null) {
-      backend.preview(-1, item.source_index).then((view) => { if (alive) setOldView(view) }).catch(fail)
-    }
-    if (item.target_index !== null) {
-      backend.preview(item.target_index, item.source_index ?? -1).then((view) => { if (alive) setNewView(view) }).catch(fail)
+    backend.preview(-1, source).then((view) => { if (alive) setOldView(view) })
+      .catch((error: Error) => { if (alive) setFailed(error.message) })
+    return () => { alive = false }
+  }, [source])
+  useEffect(() => {
+    let alive = true
+    setNewView(null)
+    if (target !== null) {
+      backend.preview(target, source).then((view) => { if (alive) setNewView(view) })
+        .catch((error: Error) => { if (alive) setFailed(error.message) })
     }
     return () => { alive = false }
-  }, [item])
-  const words = REASON_WORDS[item.reason]
+  }, [source, target])
+  const words = chosen
+    ? { title: '직접 고른 짝입니다', detail: '옛 필기를 고르신 새 쪽에 얹습니다. 제자리에 있는지 봐 주세요.' }
+    : REASON_WORDS[reason]
   return (
     <article className={`card ${mark}`}>
       <div className="pages">
-        {item.source_index !== null && (
-          <Page label={`옛 ${item.source_index + 1}쪽`} background={oldView?.before} ink={oldView?.ink} failed={failed} />
-        )}
-        {item.target_index !== null && (
-          <Page label={`새 ${item.target_index + 1}쪽`} background={newView?.after} ink={newView?.ink} failed={failed} />
+        <Page label={`옛 ${source + 1}쪽`} background={oldView?.before} ink={oldView?.ink} failed={failed} />
+        {target !== null && (
+          <Page label={`새 ${target + 1}쪽`} background={newView?.after} ink={newView?.ink} failed={failed} />
         )}
       </div>
       <div className="why">
@@ -191,18 +242,69 @@ function Card({ item, mark, onMark }: { item: ReviewItem; mark: Mark; onMark: (m
         <div className="actions">
           {mark === 'open' ? (
             <>
-              <button className="button" onClick={() => onMark('ok')}>맞아요</button>
+              <button className="button" onClick={() => onMark('ok')}>{target === null ? '남기기' : '맞아요'}</button>
+              <button className="button quiet" onClick={() => setPicking((now) => !now)}>다른 쪽</button>
               <button className="button quiet" onClick={() => onMark('excluded')}>빼기</button>
             </>
           ) : (
             <>
               <span className="t-caption">{mark === 'ok' ? '확인했습니다' : '결과에서 뺐습니다'}</span>
               <button className="button quiet" onClick={() => onMark('open')}>{mark === 'ok' ? '되돌리기' : '다시 넣기'}</button>
+              {mark === 'ok' && <button className="button quiet" onClick={() => setPicking((now) => !now)}>다른 쪽</button>}
             </>
           )}
         </div>
       </div>
+      {picking && (
+        <TargetPicker count={targetCount} current={target} thumbnails={thumbnails}
+          onPick={(chosenTarget) => { setPicking(false); onPick(chosenTarget) }}
+          onClose={() => setPicking(false)} />
+      )}
     </article>
+  )
+}
+
+// 새 PDF 의 쪽을 가로로 펼쳐 하나를 고른다. 쪽 그림은 보일 때만 불러온다.
+function TargetPicker({ count, current, thumbnails, onPick, onClose }: {
+  count: number; current: number | null; thumbnails: Map<number, string>
+  onPick: (target: number) => void; onClose: () => void
+}) {
+  const strip = useRef<HTMLDivElement>(null)
+  const [, redraw] = useState(0)
+  useEffect(() => {
+    const root = strip.current
+    if (!root) return
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        const index = Number((entry.target as HTMLElement).dataset.index)
+        observer.unobserve(entry.target)
+        if (thumbnails.has(index)) continue
+        backend.preview(index, -1).then((view) => { thumbnails.set(index, view.after); redraw((n) => n + 1) }).catch(() => {})
+      }
+    }, { root, rootMargin: '0px 400px' })
+    root.querySelectorAll('[data-index]').forEach((node) => observer.observe(node))
+    root.querySelector('.current')?.scrollIntoView({ inline: 'center', block: 'nearest' })
+    return () => observer.disconnect()
+  }, [thumbnails])
+  return (
+    <div className="picker" onKeyDown={(event) => { if (event.key === 'Escape') onClose() }}>
+      <div className="picker-head">
+        <span className="t-caption">옛 필기를 얹을 새 쪽을 고르세요</span>
+        <button className="button quiet" onClick={onClose}>닫기</button>
+      </div>
+      <div className="strip" ref={strip}>
+        {Array.from({ length: count }, (_, index) => (
+          <button key={index} data-index={index} className={`thumb${index === current ? ' current' : ''}`}
+            onClick={() => onPick(index)} aria-label={`새 ${index + 1}쪽`}>
+            {thumbnails.has(index)
+              ? <img src={thumbnails.get(index)} alt="" />
+              : <span className="thumb-empty" />}
+            <span className="t-caption">새 {index + 1}쪽</span>
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -224,25 +326,24 @@ function Page({ label, background, ink, failed }: { label: string; background?: 
   )
 }
 
-function AllPages({ slots, attention, marks }: {
-  slots: PlanSlot[]
-  attention: Map<number, ReviewItem>
-  marks: Record<number, Mark>
+function AllPages({ slots, reasons, marks, blank, chosen }: {
+  slots: Slot[]; reasons: Record<number, Reason>; marks: Record<number, Mark>; blank: Set<number>; chosen: Set<number>
 }) {
   return (
     <ol className="all-list">
-      {slots.map((slot, position) => {
-        const item = attention.get(position)
-        const mark = marks[position]
+      {slots.map((slot) => {
+        const s = slot.source_index
+        const watched = s !== null && s in reasons
+        const mark = watched ? marks[s!] : undefined
         let state = '자동'
-        if (item) state = mark === 'ok' ? '확인함' : mark === 'excluded' ? '뺌' : '볼 쪽'
-        else if (slot.source_index === null) state = '새로 생긴 쪽'
-        else if (slot.target_index === null) state = '필기가 없어 뺌'
-        const pair = slot.source_index !== null && slot.target_index !== null
-          ? `옛 ${slot.source_index + 1}쪽 → 새 ${slot.target_index + 1}쪽`
-          : slot.source_index === null ? `새 ${slot.target_index! + 1}쪽` : `옛 ${slot.source_index + 1}쪽`
+        if (watched) state = mark === 'excluded' ? '뺌' : chosen.has(s!) ? '직접 고름' : mark === 'ok' ? '확인함' : '볼 쪽'
+        else if (s === null) state = '새로 생긴 쪽'
+        else if (slot.target_index === null) state = blank.has(s) ? '필기가 없어 뺌' : '옛 쪽째 남김'
+        const pair = s !== null && slot.target_index !== null
+          ? `옛 ${s + 1}쪽 → 새 ${slot.target_index + 1}쪽`
+          : s === null ? `새 ${slot.target_index! + 1}쪽` : `옛 ${s + 1}쪽`
         return (
-          <li key={position} className={item && mark === 'open' ? 'attention' : ''}>
+          <li key={`${s}-${slot.target_index}`} className={watched && mark === 'open' ? 'attention' : ''}>
             <span className="t-body">{pair}</span><span className="t-caption">{state}</span>
           </li>
         )

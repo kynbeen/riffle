@@ -44,6 +44,7 @@ export interface ReviewSummary {
 
 export interface Review {
   items: ReviewItem[]
+  blank_sources: number[]
   summary: ReviewSummary
 }
 

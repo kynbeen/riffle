@@ -131,6 +131,18 @@ button, input { font: inherit; color: inherit; }
 .why { display: grid; gap: 8px; }
 .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
 
+.picker { grid-column: 1 / -1; display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.picker-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.strip { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 8px; scroll-snap-type: x proximity; }
+.thumb {
+  flex: 0 0 132px; display: grid; gap: 4px; justify-items: center; padding: 6px; border-radius: 10px;
+  border: 1.5px solid transparent; background: var(--bg); cursor: pointer; scroll-snap-align: center;
+}
+.thumb:hover { border-color: var(--line-strong); }
+.thumb.current { border-color: var(--accent); }
+.thumb img { width: 100%; height: auto; border-radius: 4px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); background: #fff; }
+.thumb-empty { width: 100%; aspect-ratio: 4 / 3; border-radius: 4px; background: var(--bg-hover); }
+
 .all summary { cursor: pointer; color: var(--text-2); padding: 4px 0; }
 .all summary:hover { color: var(--text); }
 .all-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 360px; overflow: auto; border-top: 1px solid var(--line); }

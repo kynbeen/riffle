@@ -112,10 +112,17 @@ const place = new Function(grab("nativeReviewPlacement") + "\nreturn nativeRevie
 process.stdout.write(JSON.stringify(place(scenario.plan, scenario.sourceOrder)
   .map(entry => entry.page?.page_id || null)));
 '''
-        for plan, expected in cases:
+        trailing = [dict(page_id="a", source_index=0, blank=False),
+                    dict(page_id="b", source_index=1, blank=False),
+                    dict(page_id="end", source_index=None, blank=True)]
+        scenarios = [(plan, source_order, expected) for plan, expected in cases] + [
+            # 노트 끝의 빈 노트 쪽은 새 PDF 끝에 쪽이 붙어도 맨 끝에 남는다(저장 결과와 같다).
+            ([slot(0, 0), slot(1, 1), slot(None, 2)], trailing, ["a", "b", None, "end"]),
+        ]
+        for plan, order, expected in scenarios:
             with self.subTest(plan=plan):
                 result = subprocess.run([node, "-e", driver, str(APP_JS),
-                    json.dumps(dict(plan=plan, sourceOrder=source_order))],
+                    json.dumps(dict(plan=plan, sourceOrder=order))],
                     capture_output=True, text=True, check=True)
                 self.assertEqual(json.loads(result.stdout), expected)
 

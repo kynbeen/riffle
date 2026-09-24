@@ -47,26 +47,39 @@ def canvas_transform(
     target_page,
     source_canvas: tuple[float, float],
     alignment: Alignment | None,
+    *,
+    target_canvas_width: float | None = None,
 ) -> CanvasTransform:
-    """PDF 점 좌표와 앱 캔버스 좌표의 밀도를 유지하며 정렬의 역변환을 만든다."""
+    """PDF 점 좌표와 앱 캔버스 좌표 사이에서 정렬의 역변환을 만든다.
+
+    기본은 원본 쪽의 밀도(캔버스 px / PDF pt)를 대상 쪽에도 그대로 쓴다. ``target_canvas_width``
+    를 주면 대상 캔버스 폭을 그 값으로 고정하고 밀도를 거기에 맞춘다 — Samsung Notes 는 PDF 쪽
+    폭과 무관하게 캔버스 폭을 노트 폭(1848)으로 둔다.
+    """
     source_width = max(float(source_page.rect.width), 1e-6)
     source_height = max(float(source_page.rect.height), 1e-6)
     canvas_width = max(float(source_canvas[0]), 1.0)
     canvas_height = max(float(source_canvas[1]), 1.0)
     density_x = canvas_width / source_width
     density_y = canvas_height / source_height
-    target_width = float(target_page.rect.width) * density_x
-    target_height = float(target_page.rect.height) * density_y
+    target_page_width = max(float(target_page.rect.width), 1e-6)
+    if target_canvas_width is None:
+        target_x, target_y = density_x, density_y
+    else:
+        target_x = float(target_canvas_width) / target_page_width
+        target_y = target_x * density_y / density_x
+    target_width = target_page_width * target_x
+    target_height = float(target_page.rect.height) * target_y
 
-    if alignment is None:
-        return CanvasTransform(1.0, 1.0, 0.0, 0.0, target_width, target_height)
-
-    scale = max(float(alignment.scale), 1e-9)
+    # 원본 캔버스 → 원본 PDF pt(÷원본 밀도) → 정렬 역변환 → 대상 캔버스(×대상 밀도)
+    scale = 1.0 if alignment is None else max(float(alignment.scale), 1e-9)
+    offset_x = 0.0 if alignment is None else float(alignment.offset_x)
+    offset_y = 0.0 if alignment is None else float(alignment.offset_y)
     return CanvasTransform(
-        scale_x=1.0 / scale,
-        scale_y=1.0 / scale,
-        offset_x=-density_x * float(alignment.offset_x) / scale,
-        offset_y=-density_y * float(alignment.offset_y) / scale,
+        scale_x=target_x / (density_x * scale),
+        scale_y=target_y / (density_y * scale),
+        offset_x=-target_x * offset_x / scale,
+        offset_y=-target_y * offset_y / scale,
         target_width=target_width,
         target_height=target_height,
     )

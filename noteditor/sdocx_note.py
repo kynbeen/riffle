@@ -86,15 +86,18 @@ class NoteInfo:
     height_offset: int
 
 
-def read_note(blob: bytes) -> NoteInfo:
+def _times_offset(blob: bytes) -> int:
+    """``createdTime`` 의 위치. 바로 뒤에 ``modifiedTime`` 이 온다(둘 다 µs)."""
     if len(blob) < 0x30:
         raise SdocxNoteError("note.note 가 너무 짧습니다.")
-    position = _NOTE_METADATA_OFFSET
-    format_version = struct.unpack_from("<I", blob, position)[0]
-    position += 4
-    chars = struct.unpack_from("<H", blob, position)[0]
-    position += 2 + chars * 2                     # noteId
-    position += 4 + 8 + 8                         # fileRevision, createdTime, modifiedTime
+    chars = struct.unpack_from("<H", blob, _NOTE_METADATA_OFFSET + 4)[0]
+    return _NOTE_METADATA_OFFSET + 4 + 2 + chars * 2 + 4   # formatVersion, noteId, fileRevision
+
+
+def read_note(blob: bytes) -> NoteInfo:
+    position = _times_offset(blob)
+    format_version = struct.unpack_from("<I", blob, _NOTE_METADATA_OFFSET)[0]
+    position += 8 + 8                             # createdTime, modifiedTime
     if position + 20 > len(blob):
         raise SdocxNoteError("note.note 메타데이터가 잘렸습니다.")
     width, height, pad_x, pad_y = struct.unpack_from("<IIII", blob, position)
@@ -106,6 +109,19 @@ def read_note(blob: bytes) -> NoteInfo:
         vertical_padding=pad_y,
         height_offset=position + 4,
     )
+
+
+def read_note_times(blob: bytes) -> tuple[int, int]:
+    """(createdTime, modifiedTime) — 1970년부터의 µs."""
+    return struct.unpack_from("<QQ", blob, _times_offset(blob))
+
+
+def patch_note_times(blob: bytes, now_us: int) -> bytes:
+    """만든 시각과 고친 시각을 ``now_us`` 로 바꾼다. 필기를 옮긴 파일이 새 노트로 보이게 한다."""
+    read_note(blob)
+    patched = bytearray(blob)
+    struct.pack_into("<QQ", patched, _times_offset(blob), now_us, now_us)
+    return bytes(patched)
 
 
 def note_height(page_heights: list[int], vertical_padding: int) -> int:

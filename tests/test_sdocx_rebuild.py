@@ -9,6 +9,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import pymupdf
 
 from noteditor.page_match import MatchResult, PagePair
+from noteditor.sdocx_end_tag import patch_end_tag, read_end_tag
 from noteditor.sdocx_note import PageOrder, PageOrderEntry, read_note, read_page_order
 from noteditor.sdocx_page import is_blank_page, page_hash, read_page
 from noteditor.sdocx_rebuild import SdocxRebuildError, rebuild_handwriting
@@ -112,6 +113,31 @@ class RebuildHandwritingTests(unittest.TestCase):
             self.assertEqual(names[:3], [UUIDS[0], UUIDS[4], UUIDS[2]])
             self.assertEqual(archive.read(f"{UUIDS[4]}.page"), self.payloads[f"{UUIDS[4]}.page"])
 
+    def test_trailing_native_page_stays_last_when_the_target_gains_a_final_page(self):
+        target = self.root / "appended.pdf"
+        make_pdf(target, ["A", "DROP", "KEEP", "C", "APPENDED"])
+        match = MatchResult(tuple(PagePair(index, index) for index in range(4)) + (PagePair(None, 4),))
+        output = self.root / "appended.sdocx"
+        rebuild_handwriting(self.source_sdocx, target, output, match,
+                            uuid_factory=lambda: NEW_UUID, hash_factory=lambda size: b"N" * size)
+        with ZipFile(output) as archive:
+            order = read_page_order(archive.read("pageIdInfo.dat"))
+            self.assertEqual([entry.uuid for entry in order.entries][-2:], [NEW_UUID, UUIDS[4]])
+
+    def test_every_copy_of_the_note_height_grows_with_added_pages(self):
+        """end_tag·꼬리표에 옛 높이가 남으면 태블릿에서 늘어난 끝 쪽이 잘린다(2026-09-24 진단)."""
+        target = self.root / "appended.pdf"
+        make_pdf(target, ["A", "DROP", "KEEP", "C", "APPENDED"])
+        match = MatchResult(tuple(PagePair(index, index) for index in range(4)) + (PagePair(None, 4),))
+        output = self.root / "appended.sdocx"
+        rebuild_handwriting(self.source_sdocx, target, output, match,
+                            uuid_factory=lambda: NEW_UUID, hash_factory=lambda size: b"N" * size)
+        with ZipFile(output) as archive:
+            height = read_note(archive.read("note.note")).height
+            self.assertEqual(height, 1039 * 5 + 2613 + 41 * 5)
+            self.assertEqual(read_end_tag(archive.read("end_tag.bin")).note_height, height)
+        self.assertEqual(read_end_tag(read_footer(output)).note_height, height)
+
     def test_rebuild_keeps_annotated_source_page_and_all_target_pages(self):
         match = MatchResult(
             pairs=(
@@ -130,13 +156,15 @@ class RebuildHandwritingTests(unittest.TestCase):
             match,
             uuid_factory=lambda: NEW_UUID,
             hash_factory=lambda size: b"N" * size,
+            now_us=11,
         )
 
         self.assertEqual(result["page_count"], 4)
         self.assertEqual(result["note_page_count"], 5)
         self.assertEqual(result["preserved_source_only_count"], 1)
         self.assertEqual(result["dropped_blank_count"], 1)
-        self.assertEqual(read_footer(output), SPEN_FOOTER)
+        height = 1039 * 4 + 2613 + 41 * 4
+        self.assertEqual(read_footer(output), patch_end_tag(SPEN_FOOTER, note_height=height, now_us=11))
 
         with ZipFile(output) as archive:
             names = archive.namelist()
@@ -242,9 +270,10 @@ class RebuildHandwritingTests(unittest.TestCase):
         self.assertEqual(result["dropped_blank_count"], 1)
         with ZipFile(output) as archive:
             order = read_page_order(archive.read("pageIdInfo.dat"))
+            # 원본 끝에 있던 빈 노트 쪽(UUIDS[4])은 쪽 순서가 바뀌어도 끝에 남는다.
             self.assertEqual(
                 [entry.uuid for entry in order.entries],
-                [UUIDS[3], UUIDS[4], UUIDS[0], UUIDS[2], NEW_UUID],
+                [UUIDS[3], UUIDS[0], UUIDS[2], NEW_UUID, UUIDS[4]],
             )
             self.assertEqual(read_page(archive.read(f"{UUIDS[3]}.page")).pdf.page_index, 0)
             self.assertEqual(read_page(archive.read(f"{UUIDS[0]}.page")).pdf.page_index, 1)

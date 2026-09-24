@@ -1036,6 +1036,11 @@ function nativeReviewPlacement(plan, sourceOrder) {
   // Match SDOCX saving: each native page follows its nearest retained predecessor.
   sourceOrder.forEach((page, position) => {
     if (page.source_index !== null) return;
+    // A native page after the last PDF page stays at the end, as SDOCX saving does.
+    if (!sourceOrder.slice(position + 1).some((next) => next.source_index !== null)) {
+      entries.push({ page, retained: true });
+      return;
+    }
     const retained = entries.filter((entry) => entry.retained && !(entry.page?.blank
       && entry.index !== undefined && plan[entry.index].target_index === null));
     const predecessor = sourceOrder.slice(0, position).reverse()

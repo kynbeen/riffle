@@ -17,11 +17,14 @@ from .page_match import MatchResult
 from .sdocx_note import PageOrder, PageOrderEntry, patch_note_height, read_note, read_page_order
 from .sdocx_page import PageInfo, is_blank_page, patch_page, read_page
 from .sdocx_ink import transform_page_ink
+from .sdocx_end_tag import read_end_tag
 from .sdocx_transfer import (
     ArchiveAddition,
     SdocxTransferError,
     _archive_context,
     _find_suffix,
+    _note_header_changes,
+    _now_us,
     _open_pdf,
     _read_trailer,
     _rewrite_archive,
@@ -175,10 +178,12 @@ def rebuild_handwriting(
     mode: str = "rebuild",
     excluded_sources: Sequence[int] = (),
     excluded_targets: Sequence[int] = (),
+    now_us: int | None = None,
 ) -> dict:
     """``match`` 순서대로 PDF와 페이지 목록을 재조립해 새 SDOCX를 저장한다."""
     from . import pdf as pymupdf
 
+    now_us = _now_us() if now_us is None else now_us
     source = Path(source_sdocx).expanduser().resolve()
     target = Path(target_pdf).expanduser().resolve()
     output = Path(output_sdocx).expanduser().resolve()
@@ -245,6 +250,7 @@ def rebuild_handwriting(
                             target_document[pair.target_index],
                             (source_page.info.canvas_width, source_page.info.canvas_height),
                             alignment,
+                            target_canvas_width=source_page.info.canvas_width,
                         )
                         blob = transform_page_ink(blob, transform)
                         canvas = (
@@ -305,6 +311,7 @@ def rebuild_handwriting(
                                 blank_template.info.canvas_height,
                             ),
                             alignment,
+                            target_canvas_width=blank_template.info.canvas_width,
                         )
                         canvas = (
                             max(1, round(transform.target_width)),
@@ -355,9 +362,15 @@ def rebuild_handwriting(
 
         ordered_pages = [(slot.page_name, slot.page_blob) for slot in slots]
         original_names = [_page_name(page_root, entry.uuid) for entry in order.entries]
+        pdf_names = {page.name for page in source_pages.values()}
         for page in supplemental:
             position = original_names.index(page.name)
             kept_names = [name for name, _blob in ordered_pages]
+            if not any(name in pdf_names for name in original_names[position + 1:]):
+                # 노트 끝의 빈 노트 쪽은 끝에 둔다. 새 PDF 끝에 쪽이 붙었을 때 그 앞에 끼면
+                # 태블릿에서 큰 빈 쪽이 문서 끝처럼 보여 마지막 쪽이 없는 줄 안다.
+                ordered_pages.append((page.name, page.blob))
+                continue
             # Native note pages follow the closest retained predecessor. If it
             # was removed, use the next retained source page as the anchor.
             predecessor = next((name for name in reversed(original_names[:position])
@@ -376,6 +389,10 @@ def rebuild_handwriting(
         )
         page_heights = [read_page(blob).canvas_height for _name, blob in ordered_pages]
         patched_note = patch_note_height(note_blob, page_heights)
+        new_height = read_note(patched_note).height
+        header_changes, trailer_patch = _note_header_changes(
+            archive, members, now_us=now_us, note_blob=patched_note, note_height=new_height,
+        )
         pdf_hash = hashlib.sha256(rebuilt_pdf_bytes).hexdigest()
         patched_media_info = bytearray(media_info)
         patched_media_info[pdf_entry.hash_offset:pdf_entry.hash_offset + 64] = pdf_hash.encode("ascii")
@@ -384,7 +401,7 @@ def rebuild_handwriting(
             embedded_name: rebuilt_pdf_bytes,
             media_info_name: bytes(patched_media_info),
             order_name: rebuilt_order.to_bytes(),
-            note_name: patched_note,
+            **header_changes,
         }
         for slot in slots:
             if not slot.added:
@@ -406,9 +423,12 @@ def rebuild_handwriting(
             replacements,
             additions=additions,
             deletions=deletions,
+            trailer_patch=trailer_patch,
         )
         if _read_trailer(temporary) != trailer:
             raise SdocxRebuildError("저장된 SDOCX의 Samsung 꼬리표 검증에 실패했습니다.")
+        _require(not trailer or read_end_tag(trailer).note_height == new_height,
+                 "Samsung 꼬리표의 노트 높이가 재조립한 높이와 다릅니다.")
         with ZipFile(temporary) as check:
             checked_members = _safe_members(check)
             expected_names = (set(members) - deletions) | set(additions)
@@ -422,9 +442,11 @@ def rebuild_handwriting(
             checked_order = read_page_order(check.read(order_name))
             _require(checked_order == rebuilt_order, "재조립한 페이지 순서가 계획과 다릅니다.")
             _require(
-                read_note(check.read(note_name)).height == read_note(patched_note).height,
+                read_note(check.read(note_name)).height == new_height,
                 "재조립한 노트 높이가 계획과 다릅니다.",
             )
+            for name, payload in header_changes.items():
+                _require(check.read(name) == payload, f"노트 머리 정보가 계획과 다릅니다: {name}")
             for entry in checked_order.entries:
                 blob = check.read(_page_name(PurePosixPath(order_name).parent, entry.uuid))
                 _require(read_page(blob).page_hash == entry.page_hash, f"재조립한 페이지 해시가 다릅니다: {entry.uuid}")
@@ -448,4 +470,5 @@ def rebuild_handwriting(
         "dropped_blank_count": len(deletions),
         "footer_size": len(trailer),
         "alignment": alignment.as_dict() if alignment else None,
+        "timestamp_us": now_us,
     }

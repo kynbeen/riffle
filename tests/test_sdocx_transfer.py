@@ -10,6 +10,8 @@ from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 import pymupdf
 
+from noteditor.sdocx_end_tag import patch_end_tag, read_end_tag
+from noteditor.sdocx_note import read_note_times
 from noteditor.sdocx_transfer import (
     ArchiveAddition,
     SdocxTransferError,
@@ -45,13 +47,17 @@ def make_media_info(filename: str, content: bytes) -> bytes:
 
 
 SPEN_FOOTER = b"\x92\x00\xa0\x0f" + bytes(122) + b"Document for S-Pen SDK"
+# 필기를 옮기면 만든·고친 시각(과 쪽 구성이 바뀌면 노트 높이)이 바뀌는 머리 정보 엔트리
+HEADER_ENTRIES = {"note.note", "end_tag.bin"}
 
 
 def make_sdocx(path: Path, embedded_pdf: Path) -> dict[str, bytes]:
     """Samsung Notes 파일처럼 PDF·SPI는 무압축으로 넣고 EOCD 뒤에 꼬리표를 붙인다."""
+    from tests.test_sdocx_note import make_note
+
     pdf_bytes = embedded_pdf.read_bytes()
     payloads = {
-        "note.note": b"note-metadata",
+        "note.note": make_note(),
         "pageIdInfo.dat": b"page-order",
         "11111111-1111-1111-1111-111111111111.page": b"P" * 420,
         "22222222-2222-2222-2222-222222222222.page": b"P" * 358,
@@ -136,8 +142,20 @@ class SdocxTransferTests(unittest.TestCase):
             entries = parse_media_info(archive.read("media/mediaInfo.dat"))
             self.assertEqual(entries[0].file_hash, hashlib.sha256(self.target_pdf.read_bytes()).hexdigest())
             for name, content in self.original_payloads.items():
-                if name not in {"media/0@source.pdf", "media/mediaInfo.dat"}:
+                if name not in {"media/0@source.pdf", "media/mediaInfo.dat", *HEADER_ENTRIES}:
                     self.assertEqual(archive.read(name), content)
+
+    def test_transfer_stamps_the_transfer_time_as_created_and_modified(self):
+        output = self.root / "result.sdocx"
+        now_us = 1790239343772615
+        result = transfer_handwriting(self.source_sdocx, self.target_pdf, output, now_us=now_us)
+
+        self.assertEqual(result["timestamp_us"], now_us)
+        with ZipFile(output) as archive:
+            self.assertEqual(read_note_times(archive.read("note.note")), (now_us, now_us))
+            tag = read_end_tag(archive.read("end_tag.bin"))
+        self.assertEqual((tag.created, tag.modified), (now_us, now_us))
+        self.assertEqual(read_end_tag(read_footer(output)).created, now_us)
 
     def test_transfer_aligns_a_relaid_out_pdf_to_the_original_page_box(self):
         variant = self.root / "variant.pdf"
@@ -194,16 +212,17 @@ class SdocxTransferTests(unittest.TestCase):
 
     def test_transfer_keeps_samsung_footer_and_untouched_bytes(self):
         output = self.root / "result.sdocx"
-        result = transfer_handwriting(self.source_sdocx, self.target_pdf, output)
+        result = transfer_handwriting(self.source_sdocx, self.target_pdf, output, now_us=7)
 
         self.assertEqual(result["footer_size"], len(SPEN_FOOTER))
-        self.assertEqual(read_footer(output), SPEN_FOOTER)
+        # 꼬리표는 시각 칸만 바뀌고 나머지 바이트·길이는 그대로다.
+        self.assertEqual(read_footer(output), patch_end_tag(SPEN_FOOTER, now_us=7))
 
         before = raw_entries(self.source_sdocx)
         after = raw_entries(output)
         self.assertEqual(list(before), list(after))
         for name in before:
-            if name in {"media/0@source.pdf", "media/mediaInfo.dat"}:
+            if name in {"media/0@source.pdf", "media/mediaInfo.dat", *HEADER_ENTRIES}:
                 continue
             self.assertEqual(after[name], before[name], name)
         self.assertEqual(after["media/0@source.pdf"][0], ZIP_STORED)

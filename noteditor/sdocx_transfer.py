@@ -15,6 +15,7 @@ import hashlib
 import os
 import struct
 import tempfile
+import time
 import zlib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -29,8 +30,9 @@ from .alignment import Alignment, build_aligned_pdf, render_comparison
 from .ink_transform import canvas_transform
 from .page_match import MatchResult
 from .page_plan import PagePlan
+from .sdocx_end_tag import SdocxEndTagError, patch_end_tag
 from .sdocx_ink import render_ink_png
-from .sdocx_note import read_page_order
+from .sdocx_note import SdocxNoteError, patch_note_times, read_page_order
 from .sdocx_page import read_page
 from .transfer_plan import (
     HandwritingTransferError,
@@ -289,12 +291,14 @@ def _rewrite_archive(
     *,
     additions: dict[str, ArchiveAddition] | None = None,
     deletions: set[str] | None = None,
+    trailer_patch: Callable[[bytes], bytes] | None = None,
 ) -> bytes:
     """엔트리를 교체·추가·삭제하고 나머지는 압축 상태 그대로 복사한다.
 
     ZIP 헤더의 플래그 비트·타임스탬프·엔트리 순서와 EOCD 뒤의 Samsung 꼬리표를 그대로 두어야
     Samsung Notes가 결과 파일을 연다. 추가 엔트리는 지정한 기존 엔트리의 로컬/중앙 헤더를
-    복제하고 이름·CRC·크기·오프셋만 바꾼다. 반환값은 보존한 꼬리표 바이트다.
+    복제하고 이름·CRC·크기·오프셋만 바꾼다. 꼬리표는 ``trailer_patch`` 가 있으면 그것으로
+    값만 고친다(길이는 같아야 한다). 반환값은 써 넣은 꼬리표 바이트다.
     """
     additions = dict(additions or {})
     deletions = set(deletions or ())
@@ -390,8 +394,49 @@ def _rewrite_archive(
         struct.pack_into("<HH", record, 8, entry_count, entry_count)
         struct.pack_into("<II", record, 12, central_size, central_offset)
         writer.write(bytes(record))
+        if trailer_patch is not None and trailer:
+            patched_trailer = trailer_patch(trailer)
+            if len(patched_trailer) != len(trailer):
+                raise SdocxTransferError("Samsung 꼬리표를 고치는 중 길이가 변했습니다.")
+            trailer = patched_trailer
         writer.write(trailer)
     return trailer
+
+
+def _note_header_changes(
+    archive: ZipFile,
+    members: dict[str, ZipInfo],
+    *,
+    now_us: int,
+    note_blob: bytes | None = None,
+    note_height: int | None = None,
+) -> tuple[dict[str, bytes], Callable[[bytes], bytes]]:
+    """``note.note``·``end_tag.bin``·파일 끝 꼬리표에 넣을 새 시각과(주면) 노트 높이.
+
+    필기를 옮긴 결과는 새 노트이므로 만든·고친 시각을 옮긴 시각으로 바꾼다. 쪽 구성이 바뀌면
+    ``end_tag`` 쪽 노트 높이도 ``note.note`` 와 같게 맞춘다 — 옛 높이가 남으면 끝 쪽이 잘린다.
+    """
+    note_name = _find_suffix(members, "note.note")
+    note = archive.read(note_name) if note_blob is None else note_blob
+    try:
+        changes = {note_name: patch_note_times(note, now_us)}
+    except SdocxNoteError as exc:
+        raise SdocxTransferError(f"note.note 를 해석할 수 없습니다: {exc}") from exc
+
+    def patch(blob: bytes) -> bytes:
+        try:
+            return patch_end_tag(blob, note_height=note_height, now_us=now_us)
+        except SdocxEndTagError as exc:
+            raise SdocxTransferError(f"Samsung 노트 머리 정보를 해석할 수 없습니다: {exc}") from exc
+
+    tag_names = [name for name in members if name.lower().endswith("end_tag.bin")]
+    if len(tag_names) == 1:
+        changes[tag_names[0]] = patch(archive.read(tag_names[0]))
+    return changes, patch
+
+
+def _now_us() -> int:
+    return time.time_ns() // 1000
 
 
 def _read_trailer(path: Path) -> bytes:
@@ -644,6 +689,7 @@ def preview_transfer(
                     target_document[page_index],
                     (page_info.canvas_width, page_info.canvas_height),
                     preview_alignment,
+                    target_canvas_width=page_info.canvas_width,
                 )
             if inspection.mode == "rebuild" or source_index != page_index:
                 if source_index is None:
@@ -696,10 +742,12 @@ def transfer_handwriting(
     *,
     match_override: MatchResult | None = None,
     plan_override: PagePlan | None = None,
+    now_us: int | None = None,
 ) -> dict:
     source = Path(source_sdocx).expanduser().resolve()
     target = Path(target_pdf).expanduser().resolve()
     output = Path(output_sdocx).expanduser().resolve()
+    now_us = _now_us() if now_us is None else now_us
     inspection = inspect_transfer(source, target)
     if output.suffix.lower() != ".sdocx":
         output = output.with_suffix(".sdocx")
@@ -724,11 +772,12 @@ def transfer_handwriting(
             mode=inspection.mode,
             excluded_sources=plan_override.excluded_sources if plan_override else (),
             excluded_targets=plan_override.excluded_targets if plan_override else (),
+            now_us=now_us,
         )
 
     archive, members, media_info_name, media_info, pdf_entry, embedded_name = _archive_context(source)
     try:
-        embedded_pdf = archive.read(embedded_name)
+        header_changes, trailer_patch = _note_header_changes(archive, members, now_us=now_us)
     finally:
         archive.close()
 
@@ -746,7 +795,12 @@ def transfer_handwriting(
         trailer = _rewrite_archive(
             source,
             temporary,
-            {embedded_name: target_bytes, media_info_name: bytes(patched_media_info)},
+            {
+                embedded_name: target_bytes,
+                media_info_name: bytes(patched_media_info),
+                **header_changes,
+            },
+            trailer_patch=trailer_patch,
         )
         if _read_trailer(temporary) != trailer:
             raise SdocxTransferError("저장된 SDOCX의 Samsung 꼬리표 검증에 실패했습니다.")
@@ -764,8 +818,11 @@ def transfer_handwriting(
             )
             if checked_pdf.file_hash != target_hash:
                 raise SdocxTransferError("저장된 SDOCX의 PDF 해시 검증에 실패했습니다.")
+            for name, payload in header_changes.items():
+                if check.read(name) != payload:
+                    raise SdocxTransferError(f"노트 머리 정보 저장 검증에 실패했습니다: {name}")
             for name, info in members.items():
-                if name in {embedded_name, media_info_name} or info.is_dir():
+                if name in {embedded_name, media_info_name, *header_changes} or info.is_dir():
                     continue
                 checked = check.getinfo(name)
                 if checked.file_size != info.file_size or checked.CRC != info.CRC:
@@ -781,6 +838,7 @@ def transfer_handwriting(
         "path": str(output),
         "size": output.stat().st_size,
         "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
-        "preserved_entry_count": len(members) - 2,
+        "preserved_entry_count": len(members) - 2 - len(header_changes),
         "footer_size": len(trailer),
+        "timestamp_us": now_us,
     }

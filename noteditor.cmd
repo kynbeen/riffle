@@ -1,11 +1,9 @@
 @echo off
 rem ASCII only, CRLF only. cmd.exe misparses LF-only batch files and mangles
-rem non-ASCII comments in the OEM codepage. Korean notes live in README.md and
-rem in Sleek pipeline/noteditor_link.py (_path_root).
+rem non-ASCII comments in the OEM codepage. Korean notes live in README.md.
 rem
 rem Put this folder on PATH and `noteditor` launches the desktop app from anywhere.
-rem This file must stay in the NotEditor root: Sleek locates the install with
-rem shutil.which("noteditor") and treats this file's folder as the root.
+rem This file must stay in the NotEditor root: it finds venv and dist next to itself.
 setlocal
 set "NE_ROOT=%~dp0"
 if exist "%NE_ROOT%venv\Scripts\pythonw.exe" (

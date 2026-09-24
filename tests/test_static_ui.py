@@ -58,18 +58,22 @@ class StaticUiContractTests(unittest.TestCase):
         self.assertIn("state.orderDirty = true", self.js)
         self.assertIn("function insertNearOwnPages(ref)", self.js)
 
-    def test_sleek_handoff_keeps_the_reproducible_contract_order(self):
-        render_result = self.js.split("function renderResult()", 1)[1].split(
-            "function renderSummary()", 1
-        )[0]
-        self.assertIn("const orderLocked = isHandoffSession()", render_result)
-        self.assertIn("refs.resetOrder.hidden = orderLocked", render_result)
-        self.assertIn("!orderLocked && state.order.length > 1", render_result)
-        self.assertIn('orderLocked ? " hidden disabled" : ""', render_result)
+    def test_sleek_handoff_screen_is_gone(self):
+        """Sleek 인계 전용 화면은 걷었다(명세 2026-09-24-01 작업 단위 1). 흔적이 남으면
+        아무도 부르지 않는 갈래가 다시 자란다."""
+        root = Path(__file__).parents[1] / "noteditor"
+        main = (root / "__main__.py").read_text(encoding="utf-8")
+        app = (root / "app.py").read_text(encoding="utf-8")
+        for word in ("startup_plan", "sourceReview", "suggestRanges", "finish_review",
+                     "close_window", "mergePlan", "returnToSleek", "review-mode"):
+            with self.subTest(word=word):
+                self.assertNotIn(word, self.js + self.html + self.css + app)
+        self.assertNotIn("--open-plan", main)
+        self.assertFalse((root / "merge_handoff.py").exists())
+        self.assertFalse((root / "exam_range.py").exists())
 
     def test_javascript_source_contains_no_literal_nul_bytes(self):
         self.assertNotIn("\x00", self.js)
-        self.assertIn(r'join("\u0000")', self.js)
 
     def test_file_buttons_wait_for_runtime_connection(self):
         self.assertIn('id="addPdfButton" class="button secondary" type="button" disabled', self.html)
@@ -77,118 +81,6 @@ class StaticUiContractTests(unittest.TestCase):
         self.assertIn('callApi("health")', self.js)
         self.assertIn("NotEditor 연결을 확인할 수 없습니다", self.js)
         self.assertIn('window.location.hash === "#desktop"', self.js)
-
-    def test_sleek_startup_plan_populates_the_desktop_merge_ui(self):
-        self.assertIn("startup_plan: async () => ({ ok: true, plan: null })", self.js)
-        self.assertIn('callApi("startup_plan")', self.js)
-        self.assertIn("function applyStartupPlan(plan)", self.js)
-        self.assertIn("state.selected = new Set(state.order.map(refKey))", self.js)
-        self.assertIn("Boolean(state.mergePlan)", self.js)
-
-    def test_sleek_source_review_combines_page_pairs_with_merge_selection(self):
-        self.assertIn('id="sourceReview"', self.html)
-        self.assertIn('id="sourceReviewRows"', self.html)
-        self.assertIn("실제 사용한 파일", self.html)
-        self.assertIn("현재 수집함 파일", self.html)
-        self.assertIn("function renderSourceReview()", self.js)
-        self.assertIn('callApi("page_image", pageRef.document_id', self.js)
-        self.assertIn(
-            'callApi("finish_review", decision, state.order, change, changedPages)', self.js)
-        self.assertIn("function changedPagesForSleek()", self.js)
-        self.assertIn("변화 없음", self.html)
-        self.assertIn(".workspace.review-mode", self.css)
-        self.assertIn("수집함 PDF 쪽 선택", self.js)
-
-    def test_exam_ranges_are_proposed_automatically_after_adding_files(self):
-        """사용자가 원한 것은 "넣으면 알아서 범위를 잡는 것"이다 — 묻지 않고 바로 짚는다."""
-        self.assertIn('id="suggestRangesButton"', self.html)
-        self.assertIn("범위 자동 인식", self.html)
-        # 판 4 부터 짚을 수 있는 것이 둘(족첵 범위·강의록 진도 범위)이라 분기가 함수로 나갔다.
-        self.assertIn("if (added) await suggestForPlan({auto: true});", self.js)
-        self.assertIn("if (state.mergePlan?.can_suggest_ranges) { await suggestRanges({auto}); return; }",
-                      self.js)
-        self.assertIn('callApi("suggest_ranges")', self.js)
-        # 제안일 뿐이다 — 쪽 선택에 채워 넣어 사용자가 보고 고치게 한다.
-        self.assertIn("setDocumentSelection(doc, parsed.indices)", self.js)
-        # 겨룰 다음 강의가 없어 끝 경계를 믿기 어려운 경우에만 그렇게 말한다.
-        self.assertIn("끝 쪽을 확인해 주세요", self.js)
-        self.assertIn(".toast.warn", self.css)
-
-    def test_both_change_explains_partial_question_rebuild(self):
-        button = self.html.split('id="sourceReviewApply"', 1)[1].split(">", 1)[0]
-        self.assertIn("본문 영향 단계부터", button)
-        self.assertIn("바뀐 쪽만", button)
-        self.assertNotIn("처음부터 전부", button)
-
-    def test_review_layout_never_pushes_the_decision_row_off_the_window(self):
-        """낮은 창에서 결정 버튼이 화면 밖으로 밀려 사용자가 스크롤해야 했다.
-
-        실측(Playwright, 1240x640): 고정 바닥 588px 때문에 버튼 줄 바닥이 651px 로 나갔다.
-        안쪽에서 스크롤하라고 만든 화면인데 바깥이 스크롤된 것이다.
-        """
-        self.assertIn("min-height: min(588px, calc(100vh - 92px))", self.css)
-        self.assertNotIn("height: calc(100vh - 92px); min-height: 588px", self.css)
-        # 비교 칸의 바닥이 높으면 그것만으로 버튼 줄을 밀어낸다.
-        self.assertIn("height: clamp(220px, 57vh, 650px)", self.css)
-
-    def test_source_review_uses_a_large_left_comparison_and_right_page_picker(self):
-        self.assertIn("grid-template-columns: minmax(650px, 2.7fr) minmax(300px, .8fr)", self.css)
-        self.assertIn(".workspace.review-mode .source-panel { grid-column: 2", self.css)
-        self.assertIn(".workspace.review-mode .preview-panel { display: none; }", self.css)
-        self.assertIn(".source-review .page-review-rows { min-height: 0; flex: 1; overflow-y: auto;", self.css)
-        self.assertIn(".source-review .review-page { height: clamp(220px", self.css)
-        self.assertIn("position: sticky; top: 0; z-index: 30;", self.css)   # 도구 막대 고정
-        self.assertIn('{ root: refs.sourceReview, rootMargin: "600px 0px" }', self.js)
-
-    def test_excluded_picker_pages_dim_the_current_inbox_review_preview(self):
-        self.assertIn('cell.dataset.key = pageKey(pageRef.document_id, pageRef.page_index)', self.js)
-        self.assertIn("function updateSourceReviewSelection(onlyKey = null)", self.js)
-        self.assertIn('cell.classList.toggle("excluded", !selected)', self.js)
-        self.assertIn("updateSourceReviewSelection(key)", self.js)
-        self.assertIn(".source-review .review-cell.target-cell.excluded .review-page", self.css)
-
-    def test_source_review_offers_four_outcomes_instead_of_a_yes_or_no(self):
-        """무엇이 바뀌었는지에 따라 Sleek 이 다시 도는 범위가 달라진다."""
-        for label in ("변화 없음", "문제 수정됨", "내용 수정됨", "문제와 내용 수정됨"):
-            self.assertIn(label, self.html)
-        for change in ("none", "questions", "content", "both"):
-            self.assertIn(f'data-change="{change}"', self.html)
-        self.assertIn("파일을 그대로 두고 현재 수집함 버전을 확인한 것으로 기록합니다", self.html)
-        self.assertIn("파일은 유지하고 현재 수집함 버전을 원본 최신으로 확인했습니다", self.js)
-
-    def test_changed_pages_can_be_jumped_to_directly(self):
-        self.assertIn('id="sourceReviewPrev"', self.html)
-        self.assertIn('id="sourceReviewNext"', self.html)
-        self.assertIn("function jumpToChangedPage(step)", self.js)
-        self.assertIn('row.scrollIntoView({ behavior: "smooth", block: "center" })', self.js)
-        self.assertIn("state.sourceReviewChanged.push(index)", self.js)
-
-    def test_merged_sources_flag_changes_inside_or_beside_the_recorded_range(self):
-        self.assertIn("function recordedImpact(pair, ranges)", self.js)
-        self.assertIn('entry.pages.has(index - 1) || entry.pages.has(index + 1)', self.js)
-        self.assertIn('id="sourceReviewRangeNote"', self.html)
-        self.assertIn(".review-row.range-impact.inside", self.css)
-        self.assertIn("#ff5070", self.css)
-        self.assertIn("#32d2c9", self.css)
-        self.assertIn("#a99cff", self.css)
-        app = (Path(__file__).parents[1] / "noteditor" / "app.py").read_text(encoding="utf-8")
-        self.assertIn('"recorded_ranges": recorded', app)
-
-    def test_a_handoff_session_stays_on_merge_and_returns_to_sleek(self):
-        self.assertIn("function lockToMergeTool()", self.js)
-        self.assertIn("refs.handwriting.disabled = true", self.js)
-        self.assertIn('refs.save.textContent = "저장하고 Sleek으로 돌아가기"', self.js)
-        self.assertIn("async function returnToSleek(message)", self.js)
-        self.assertIn('callApi("close_window")', self.js)
-        app = (Path(__file__).parents[1] / "noteditor" / "app.py").read_text(encoding="utf-8")
-        self.assertIn("def close_window(self) -> dict:", app)
-        self.assertIn("Sleek 인계로 열린 창에서만 쓸 수 있습니다.", app)
-
-    def test_empty_sleek_merge_plan_opens_the_inbox_picker_immediately(self):
-        self.assertIn('if (plan.auto_choose) setTimeout(() => { void addPdfs(); }, 0)', self.js)
-        app = (Path(__file__).parents[1] / "noteditor" / "app.py").read_text(encoding="utf-8")
-        self.assertIn('directory=str(self._input_root or "")', app)
-        self.assertIn("Sleek 수집함 밖의 PDF는 사용할 수 없습니다", app)
 
     def test_merge_and_handwriting_are_peer_tabs(self):
         self.assertIn('id="handwritingButton"', self.html)
@@ -225,7 +117,6 @@ class StaticUiContractTests(unittest.TestCase):
 
     def test_buttons_keep_their_labels_on_one_line(self):
         self.assertIn("button { color: inherit; white-space: nowrap; }", self.css)
-        self.assertIn("refs.mergeOutputName.parentElement.hidden = true", self.js)
 
     def test_alignment_review_is_continuous_side_by_side_and_shows_actual_ink(self):
         self.assertIn('id="handwritingReview"', self.html)

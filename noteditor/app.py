@@ -16,18 +16,6 @@ except ImportError:
 
 from . import __version__
 from .engine import ComposerSession, PdfComposerError
-from .merge_handoff import (
-    CONTRACT_VERSION,
-    MergePlan,
-    load_merge_plan,
-    path_is_within,
-    parts_from_order,
-    paths_refer_to_same_file,
-    request_scope,
-    sidecar_path,
-    write_decision,
-    write_sidecar,
-)
 from .page_plan import PagePlan
 from .ranges import PageRangeError, parse_page_ranges
 from .handwriting_transfer import (
@@ -97,26 +85,11 @@ def configure_windows_app_identity(app_id: str = APP_USER_MODEL_ID) -> None:
 class ComposerApi:
     """Small JSON-friendly bridge exposed to the embedded web UI."""
 
-    def __init__(
-        self,
-        session: ComposerSession | None = None,
-        startup_plan_path: str | Path | None = None,
-        preloaded_startup_plan: MergePlan | None = None,
-    ) -> None:
+    def __init__(self, session: ComposerSession | None = None) -> None:
         # pywebview exposes every public attribute on js_api. Keep native and
         # stateful Python objects private or its serializer walks the complete
         # WinForms/WebView2 object graph and eventually recurses forever.
         self._session = session or ComposerSession()
-        self._startup_plan_path = (
-            Path(startup_plan_path).expanduser().resolve() if startup_plan_path else None
-        )
-        self._startup_plan = preloaded_startup_plan
-        self._startup_plan_result: dict | None = None
-        self._merge_output_path: Path | None = None
-        self._input_root: Path | None = None
-        self._review_plan: MergePlan | None = None
-        self._review_reference_id: str | None = None
-        self._contract_version = CONTRACT_VERSION
         self._window: Any | None = None
         self._closed = False
         self._handwriting_source: Path | None = None
@@ -167,143 +140,6 @@ class ComposerApi:
     def health(self) -> dict:
         return self._ok(version=__version__)
 
-    def startup_plan(self) -> dict:
-        """Load a Sleek handoff once and map paths to this session's IDs."""
-        try:
-            if self._startup_plan_path is None:
-                return self._ok(plan=None)
-            if self._startup_plan_result is not None:
-                return self._ok(plan=self._startup_plan_result)
-            if self._session.sources:
-                raise PdfComposerError("시작 계획은 빈 문서 작업공간에만 적용할 수 있습니다.")
-
-            plan = self._startup_plan or load_merge_plan(self._startup_plan_path)
-            load_paths = [part.path for part in plan.parts]
-            if plan.reference_path is not None:
-                load_paths.insert(0, plan.reference_path)
-            unique_paths = list(dict.fromkeys(load_paths))
-            self._session.add_files(unique_paths)
-            sources = self._session.sources
-            source_by_path = {
-                os.path.normcase(str(source.path.resolve())): source for source in sources
-            }
-            reference = (
-                source_by_path.get(os.path.normcase(str(plan.reference_path.resolve())))
-                if plan.reference_path else None
-            )
-            if plan.reference_path and reference is None:
-                raise PdfComposerError("비교 기준 PDF를 등록하지 못했습니다.")
-            candidates = [source for source in sources if source is not reference]
-            order: list[dict] = []
-            recorded: list[dict] = []
-            for part in plan.parts:
-                source = source_by_path.get(os.path.normcase(str(part.path.resolve())))
-                if source is None:
-                    raise PdfComposerError(f"시작 계획의 PDF를 등록하지 못했습니다: {part.path.name}")
-                indices = (
-                    parse_page_ranges(part.pages, source.page_count)
-                    if part.pages
-                    else list(range(source.page_count))
-                )
-                order.extend(
-                    {"document_id": source.id, "page_index": index} for index in indices
-                )
-                # 합쳐서 만든 자료를 검토할 때, 원래 어느 쪽을 골랐었는지 화면이 알아야
-                # "고른 범위 안에서 바뀌었다"를 따로 강조할 수 있다.
-                recorded.append({
-                    "document_id": source.id,
-                    "document_name": source.name,
-                    "pages": part.pages,
-                    "page_indexes": indices,
-                })
-            if len({(item["document_id"], item["page_index"]) for item in order}) != len(order):
-                raise PdfComposerError("합치기 계획에 같은 페이지가 두 번 들어 있습니다.")
-            if order:
-                # The sidecar schema cannot describe arbitrary interleaving or reverse order.
-                parts_from_order(order, candidates)
-
-            result = {
-                "version": plan.version,
-                "mode": plan.mode,
-                "title": plan.title,
-                "output_path": str(plan.output_path),
-                "output_name": plan.output_path.name,
-                "input_root": str(plan.input_root) if plan.input_root else None,
-                "sources": [source.as_dict() for source in candidates],
-                "order": order,
-                "recorded_ranges": recorded,
-                "auto_choose": plan.mode == "merge" and not candidates,
-                # 강의록을 함께 받았으면 족첵에서 이 강의 몫을 스스로 짚어 볼 수 있다.
-                # 화면은 이 값으로 [범위 자동 인식] 버튼을 켤지 정한다.
-                "can_suggest_ranges": plan.range_hint is not None,
-                # 강의록 진도 범위는 Sleek 에 물어본다(판 4). 이 값으로 화면이
-                # [범위 자동 인식] 을 켤지 정한다 — 족첵 쪽과 같은 버튼을 쓴다.
-                "can_suggest_scope": plan.scope_api is not None,
-            }
-            if plan.mode == "review":
-                result["origin"] = plan.origin
-                result["comparison"] = self._compare_sources(reference, candidates)
-            self._startup_plan = plan
-            self._merge_output_path = plan.output_path
-            self._input_root = plan.input_root
-            self._review_plan = plan if plan.mode == "review" else None
-            self._review_reference_id = reference.id if reference else None
-            self._contract_version = plan.version
-            self._startup_plan_result = result
-            return self._ok(plan=result)
-        except Exception as exc:
-            if self._startup_plan_result is None and self._session.sources:
-                self._session.clear_sources()
-            return self._error(exc)
-
-    @staticmethod
-    def _compare_sources(reference, candidates: list) -> dict:
-        if reference is None or not candidates:
-            raise PdfComposerError("쪽 비교에는 기준 PDF와 현재 PDF가 모두 필요합니다.")
-        from . import pdf as pymupdf
-
-        from .page_match import PageFingerprint, fingerprint, fingerprints, match_fingerprints
-
-        with pymupdf.open(reference.path) as document:
-            source_fingerprints = fingerprints(document)
-        target_fingerprints = []
-        target_refs = []
-        flat_index = 0
-        for candidate in candidates:
-            with pymupdf.open(candidate.path) as document:
-                for page_index in range(document.page_count):
-                    base = fingerprint(document[page_index])
-                    target_fingerprints.append(PageFingerprint(
-                        index=flat_index, cells=base.cells, aspect=base.aspect
-                    ))
-                    target_refs.append({
-                        "document_id": candidate.id,
-                        "document_name": candidate.name,
-                        "page_index": page_index,
-                    })
-                    flat_index += 1
-        matched = match_fingerprints(source_fingerprints, target_fingerprints)
-        pairs = []
-        for pair in matched.pairs:
-            item = pair.as_dict()
-            item["source_ref"] = (
-                {"document_id": reference.id, "document_name": reference.name,
-                 "page_index": pair.source_index}
-                if pair.source_index is not None else None
-            )
-            item["target_ref"] = (
-                target_refs[pair.target_index] if pair.target_index is not None else None
-            )
-            pairs.append(item)
-        return {
-            "reference": reference.as_dict(),
-            "pairs": pairs,
-            "matched_count": len(matched.matched_pairs),
-            "source_only_count": len(matched.source_only),
-            "target_only_count": len(matched.target_only),
-            "uncertain_count": len(matched.uncertain),
-        }
-
     def log_client_error(self, message: str) -> dict:
         logging.getLogger("noteditor").error("UI error: %s", message)
         return self._ok()
@@ -325,7 +161,6 @@ class ComposerApi:
 
             paths = self._window.create_file_dialog(
                 webview.FileDialog.OPEN,
-                directory=str(self._input_root or ""),
                 allow_multiple=True,
                 file_types=("PDF 문서 (*.pdf)",),
             )
@@ -676,17 +511,10 @@ class ComposerApi:
             if isinstance(paths, (str, Path)):
                 paths = [paths]
             resolved = [Path(path).expanduser().resolve() for path in paths]
-            if self._input_root is not None:
-                outside = [path for path in resolved if not path_is_within(path, self._input_root)]
-                if outside:
-                    raise PdfComposerError(
-                        f"Sleek 수집함 밖의 PDF는 사용할 수 없습니다: {outside[0].name}"
-                    )
             added = self._session.add_files(resolved)
             return self._ok(
                 added=added,
-                sources=[source.as_dict() for source in self._session.sources
-                         if source.id != self._review_reference_id],
+                sources=[source.as_dict() for source in self._session.sources],
             )
         except Exception as exc:
             return self._error(exc)
@@ -698,8 +526,6 @@ class ComposerApi:
         사라지면, 사용자는 하지도 않은 일을 당한다. 그래서 필기 옮기기 상태는 건드리지 않는다.
         """
         try:
-            if self._review_plan is not None:
-                raise PdfComposerError("원본 비교 중에는 현재 PDF 목록을 비울 수 없습니다.")
             cleared = self._session.clear_sources()
             return self._ok(sources=[], cleared=[str(path) for path in cleared])
         except Exception as exc:
@@ -707,8 +533,6 @@ class ComposerApi:
 
     def remove_document(self, document_id: str) -> dict:
         try:
-            if document_id == self._review_reference_id:
-                raise PdfComposerError("비교 기준 PDF는 제거할 수 없습니다.")
             self._session.remove_source(document_id)
             return self._ok()
         except Exception as exc:
@@ -721,101 +545,6 @@ class ComposerApi:
         except Exception as exc:
             return self._error(exc)
 
-    def suggest_ranges(self) -> dict:
-        """지금 올라온 족첵마다 **이 강의에 해당하는 쪽 범위**를 짚어 돌려준다.
-
-        LLM 을 쓰지 않는다. 족첵은 강의록 쪽을 그대로 싣고 그 뒤에 문제를 붙인 문서라,
-        강의록 쪽 그림을 찾으면 되는 문제다(`noteditor.exam_range`). 실측 12건 중 10건이
-        사용자가 손으로 고른 범위와 양끝까지 정확히 일치했다.
-
-        **제안일 뿐이다.** 결과를 바로 저장하지 않고 화면의 쪽 선택에 채워 넣어 사용자가
-        보고 고치게 한다 — 합치기 규격의 "판정은 자동, 갱신은 사람"을 여기서도 지킨다.
-        """
-        try:
-            plan = self._startup_plan
-            hint = plan.range_hint if plan else None
-            if hint is None:
-                raise PdfComposerError(
-                    "이 창에는 비교할 강의록이 없어 범위를 자동으로 짚을 수 없습니다.")
-            candidates = [source for source in self._session.sources
-                          if source.id != self._review_reference_id]
-            if not candidates:
-                raise PdfComposerError("먼저 족첵 PDF를 추가하세요.")
-
-            from .exam_range import locate
-
-            proposals = []
-            for source in candidates:
-                found = locate(source.path, hint.lecture, list(hint.others))
-                proposals.append({
-                    "document_id": source.id,
-                    "document_name": source.name,
-                    "page_count": source.page_count,
-                    "pages": found.pages if found else "",
-                    "matched": len(found.matched_pages) if found else 0,
-                    "confidence": round(found.confidence, 3) if found else 0.0,
-                    # 겨룰 다음 강의가 없어 문서 끝까지 간 경우에만 참이다. 화면은 이때만
-                    # "끝 쪽을 확인하세요"라고 말하면 된다.
-                    "uncertain": bool(found and found.uncertain),
-                })
-            return self._ok(proposals=proposals)
-        except Exception as exc:
-            return self._error(exc)
-
-    def suggest_scope(self, document_id: str | list[str], refresh: bool = False) -> dict:
-        """올린 **강의록**에서 이번 차시가 나간 쪽 범위를 Sleek 에 물어 돌려준다.
-
-        여기서 계산하지 않는다. 전사본을 읽고 강의의 흐름을 판단하는 일이라 LLM 이 필요하고,
-        그 호출은 Sleek 만 한다(인증·사용량 관리가 거기 있다). 실측으로 통계 방식이
-        크게 빗나가던 세 건에서 이 방식은 2쪽 안에 들어왔다.
-
-        ``document_id`` 가 **목록(올린 순서)** 이면 강의 추가의 범위 인식처럼 전부를 이어붙여
-        한 번에 묻고, 문서마다의 범위를 ``proposals`` 로 돌려준다. 범위가 걸치지 않은 문서는
-        ``pages`` 가 빈 문자열이다 — 이번 차시가 쓰지 않은 파일이다.
-
-        **제안일 뿐이다.** 결과를 바로 저장하지 않고 화면의 쪽 선택에 채워 넣는다.
-        """
-        try:
-            plan = self._startup_plan
-            api = plan.scope_api if plan else None
-            if api is None:
-                raise PdfComposerError(
-                    "이 창에는 진도 범위를 물어볼 곳이 없습니다(전사본을 함께 받지 못했습니다).")
-            ids = list(document_id) if isinstance(document_id, (list, tuple)) else [document_id]
-            sources = []
-            for wanted in ids:
-                source = next((item for item in self._session.sources
-                               if item.id == wanted), None)
-                if source is None:
-                    raise PdfComposerError("올린 PDF를 찾지 못했습니다.")
-                sources.append(source)
-            if not sources:
-                raise PdfComposerError("올린 PDF를 찾지 못했습니다.")
-            if len(sources) == 1:
-                source = sources[0]
-                answer = request_scope(api, source.path, refresh=bool(refresh))
-                return self._ok(document_id=source.id,
-                                document_name=source.name,
-                                page_count=source.page_count,
-                                **answer)
-            answer = request_scope(api, [source.path for source in sources],
-                                   refresh=bool(refresh))
-            ranges: dict[Path, str] = {}
-            for part in answer.pop("parts", []):
-                try:
-                    ranges[Path(part["path"]).resolve()] = part["pages"]
-                except (OSError, ValueError):
-                    continue
-            proposals = [{
-                "document_id": source.id,
-                "document_name": source.name,
-                "page_count": source.page_count,
-                "pages": ranges.get(Path(source.path).resolve(), ""),
-            } for source in sources]
-            return self._ok(proposals=proposals, **answer)
-        except Exception as exc:
-            return self._error(exc)
-
     def parse_range(self, text: str, page_count: int) -> dict:
         try:
             indices = parse_page_ranges(text, int(page_count))
@@ -825,25 +554,6 @@ class ComposerApi:
 
     def save_result(self, order: list[dict], suggested_name: str = "조합된 문서.pdf") -> dict:
         try:
-            if self._merge_output_path is not None:
-                output_path = self._merge_output_path
-                for source in self._session.sources:
-                    if paths_refer_to_same_file(source.path, output_path):
-                        raise PdfComposerError("합치기 결과가 원본 PDF를 덮어쓸 수 없습니다.")
-                sidecar_parts = parts_from_order(order, self._session.sources)
-                # A prior failed/retried save must never leave a stale completion
-                # marker beside a newly written or failed PDF.
-                sidecar_path(output_path).unlink(missing_ok=True)
-                result = self._session.build_pdf(order, output_path)
-                sidecar = write_sidecar(
-                    result["path"],
-                    parts=sidecar_parts,
-                    noteditor_version=__version__,
-                    version=self._contract_version,
-                )
-                result["sidecar"] = str(sidecar)
-                return self._ok(cancelled=False, result=result)
-
             if self._window is None:
                 raise PdfComposerError("앱 창이 아직 준비되지 않았습니다.")
             import webview
@@ -871,65 +581,6 @@ class ComposerApi:
         except Exception as exc:
             return self._error(exc)
 
-    def finish_review(self, decision: str, order: list[dict] | None = None,
-                      change: str = "both",
-                      changed_pages: list[int] | None = None) -> dict:
-        """Record what the reviewer decided.
-
-        ``decision`` says how the file is swapped, ``change`` says what actually
-        changed — see :mod:`noteditor.merge_handoff`. ``changed_pages`` come from
-        the comparison already on screen, so Sleek never has to redo it.
-        """
-        try:
-            plan = self._review_plan
-            if plan is None:
-                raise PdfComposerError("Sleek 원본 비교 계획이 아닙니다.")
-            allowed = {"selected": {"refresh", "skip"}, "merged": {"merge", "skip"}}
-            if decision not in allowed.get(plan.origin, set()):
-                raise PdfComposerError(
-                    f"{plan.origin} 자료에서 허용하지 않는 갱신 결정입니다: {decision}"
-                )
-            if plan.decision_path is not None:
-                plan.decision_path.unlink(missing_ok=True)
-            recorded = (decision, change, changed_pages)
-            if decision == "merge":
-                actual_order = order or []
-                candidates = [source for source in self._session.sources
-                              if source.id != self._review_reference_id]
-                sidecar_parts = parts_from_order(actual_order, candidates)
-                sidecar_path(plan.output_path).unlink(missing_ok=True)
-                result = self._session.build_pdf(actual_order, plan.output_path)
-                sidecar = write_sidecar(
-                    result["path"], parts=sidecar_parts,
-                    noteditor_version=__version__, version=plan.version,
-                )
-                result["sidecar"] = str(sidecar)
-                decision_path = write_decision(plan, *recorded)
-                return self._ok(decision=decision, change=change,
-                                decision_path=str(decision_path), result=result)
-            decision_path = write_decision(plan, *recorded)
-            return self._ok(decision=decision, change=change,
-                            decision_path=str(decision_path), result=None)
-        except Exception as exc:
-            return self._error(exc)
-
-    def close_window(self) -> dict:
-        """Sleek 인계를 끝낸 창을 스스로 닫는다.
-
-        결과를 넘기고 나면 이 창이 더 할 일이 없다. 사용자가 직접 닫게 두면 창이 쌓이고,
-        다음 합치기에서 어느 창이 지금 것인지 헷갈린다. **인계로 열린 창에만** 허용한다 —
-        사용자가 그냥 실행한 NotEditor 를 웹 화면이 마음대로 닫으면 안 된다.
-        """
-        try:
-            if self._startup_plan is None:
-                raise PdfComposerError("Sleek 인계로 열린 창에서만 쓸 수 있습니다.")
-            if self._window is None:
-                raise PdfComposerError("앱 창이 아직 준비되지 않았습니다.")
-            self._window.destroy()
-            return self._ok()
-        except Exception as exc:
-            return self._error(exc)
-
     def _close(self, wait_for_analysis: bool = False) -> None:
         if self._closed:
             return
@@ -945,21 +596,14 @@ class ComposerApi:
         self._session.close()
 
 
-def run(debug: bool = False, open_plan: str | Path | None = None) -> None:
+def run(debug: bool = False) -> None:
     configure_windows_app_identity()
     import webview
 
-    startup = load_merge_plan(open_plan) if open_plan else None
-    api = ComposerApi(
-        startup_plan_path=open_plan,
-        preloaded_startup_plan=startup,
-    )
+    api = ComposerApi()
     static_file = Path(__file__).with_name("static") / "index.html"
-    window_title = "NotEditor"
-    if startup and startup.title:
-        window_title += f" — {startup.title}"
     window = webview.create_window(
-        window_title,
+        "NotEditor",
         str(static_file.resolve()) + "#desktop",
         js_api=api,
         width=1440,

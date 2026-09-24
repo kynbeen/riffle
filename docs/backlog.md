@@ -117,6 +117,20 @@
 - [x] 태그 릴리스는 keystore secret을 요구하고 서명된 release APK만 Release에 첨부한다.
 - [ ] 실제 Android 기기에서 PDF 선택·미리보기·합치기·저장과 세 필기 형식 왕복을 확인한다.
 
+## 모듈: Riffle 1.0 배포 (riffle-release)
+
+2026-09-24 NotEditor → Riffle 이름 변경(사용자 결정). 배포 방침(사용자 결정): **옛 Render 서비스 `noteditor` 는
+v1.2.0 으로 고정해 계속 돌리고, Riffle 은 1.0 부터 새 서비스로 배포한다.**
+
+- [x] 코드·문서·설치 프로그램 이름 변경(새 AppId — 설치된 NotEditor 1.2.0 을 덮지 않는다), GitHub 저장소
+  `kynbeen/riffle`, 폴더 `C:\dev\riffle`, 이 PC 의 바로가기·PATH.
+- [x] 옛 서비스 고정용 가지 `noteditor-1.2`(= 태그 `v1.2.0`)를 GitHub 에 올렸다.
+- [ ] **사용자:** Render 대시보드에서 옛 서비스 `noteditor` 의 배포 가지를 `noteditor-1.2` 로 바꾼다(로그인 필요).
+  **이것이 끝나기 전에는 main 을 올리지 않는다** — 옛 서비스가 main 을 따라 자동 배포하면 Riffle 코드가 올라간다.
+- [ ] Riffle 태그 체계. 옛 태그 `v1.0.0`~`v1.2.0` 이 있어 `v1.0.0` 을 다시 못 쓴다 — `riffle-v1.0.0` 처럼 붙이고,
+  버전 계산(`riffle/version.py` 의 `git describe --match`)과 `release.yml` 태그 조건을 함께 바꾼다.
+- [ ] 새 Render 서비스 `riffle`(`render.yaml`)을 대시보드의 Blueprint 로 만든다(사용자). 새 화면 완성 뒤 Riffle 1.0 으로 연다.
+
 ## 모듈: 손필기를 Sleek 필기 산출물로 옮기기 (sleek-notes-handwriting) — 2026-09-24 1차 구현
 
 **2026-09-24 구현(`riffle/sleek_notes.py`).** 필기본 쪽은 "왼쪽 위에 끼운 원래 쪽(Form XObject)" + "그 오른쪽 끝에서

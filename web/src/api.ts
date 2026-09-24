@@ -1,6 +1,8 @@
 // 서버와 말하는 층. 데스크톱 창(pywebview 의 Python 호출)과 웹(HTTP)의 차이는 **여기서만** 갈린다
 // (명세 2026-09-24-01 「제약」). 화면은 `Backend` 하나만 안다.
 
+import type { Review } from './reasons'
+
 export interface Held {
   name: string
   path?: string       // 데스크톱: 디스크 경로
@@ -14,11 +16,40 @@ export interface Analysis {
   error: string | null
 }
 
+export interface PlanSlot {
+  source_index: number | null
+  target_index: number | null
+  confirmed: boolean
+}
+
 export interface HandwritingStatus {
   ready: boolean
   source_name: string | null
   target_name: string | null
   analysis: Analysis
+  inspection: { plan: { slots: PlanSlot[] } | null } | null
+  review: Review | null
+}
+
+export interface Preview {
+  before: string        // 옛 배경(새 쪽 자리에 맞춘 것) — 그림 주소
+  after: string         // 새 쪽
+  ink: string           // 손필기만 그린 투명 그림
+}
+
+// 저장할 때 보내는 쪽 대응 한 줄(riffle/page_plan.py 의 PagePlan.from_payload 가 받는다).
+export interface PlanRow {
+  source_index: number | null
+  target_index: number | null
+  confirmed: boolean
+  excluded: boolean
+}
+
+export interface Saved {
+  saved: boolean
+  name?: string
+  path?: string          // 데스크톱만 — 폴더 열기에 쓴다
+  warnings?: string[]
 }
 
 export interface Backend {
@@ -30,6 +61,10 @@ export interface Backend {
   startMerge(pdfs: Held[], progress?: (share: number) => void): Promise<void>
   handwritingStatus(): Promise<HandwritingStatus>
   retryHandwriting(): Promise<void>
+  // 새 쪽(targetIndex)에 옛 쪽(sourceIndex)의 손필기를 얹어 본다. 한쪽이 없으면 -1.
+  preview(targetIndex: number, sourceIndex: number): Promise<Preview>
+  saveHandwriting(name: string, plan: PlanRow[], allowUnconfirmed: boolean): Promise<Saved>
+  openFolder?(path: string): Promise<void>
   reset(): Promise<void>
 }
 
@@ -79,11 +114,28 @@ function desktop(): Backend {
     async startMerge(pdfs) { await call('add_paths', pdfs.map((pdf) => pdf.path)) },
     async handwritingStatus() { return (await call('handwriting_status')) as unknown as HandwritingStatus },
     async retryHandwriting() { await call('retry_handwriting_analysis') },
+    async preview(targetIndex, sourceIndex) {
+      return (await call('handwriting_preview', targetIndex, sourceIndex, '')) as unknown as Preview
+    },
+    async saveHandwriting(name, plan, allowUnconfirmed) {
+      const reply = await call('save_handwriting_transfer', name, plan, allowUnconfirmed)
+      if (reply.cancelled) return { saved: false }
+      const result = reply.result as { path: string; warnings?: string[] }
+      return { saved: true, path: result.path, name: result.path.split(/[\\/]/).pop(), warnings: result.warnings }
+    },
+    async openFolder(path) { await call('open_folder', path) },
     async reset() {
       await call('reset_handwriting_transfer')
       await call('reset_documents')
     },
   }
+}
+
+// 내려받은 파일 이름 — 서버가 Content-Disposition 에 한글 이름을 filename* 로 싣는다.
+function downloadName(header: string | null, fallback: string): string {
+  const encoded = header?.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (encoded) return decodeURIComponent(encoded)
+  return header?.match(/filename="?([^";]+)"?/i)?.[1] ?? fallback
 }
 
 // --- 웹 ---------------------------------------------------------------------------------------------
@@ -134,6 +186,33 @@ function web(): Backend {
     },
     async handwritingStatus() { return (await json('/api/handwriting/status')) as unknown as HandwritingStatus },
     async retryHandwriting() { await json('/api/handwriting/retry', { method: 'POST' }) },
+    async preview(targetIndex, sourceIndex) {
+      const query = new URLSearchParams({ page_index: String(targetIndex), source_index: String(sourceIndex) })
+      return (await json(`/api/handwriting/preview?${query}`)) as unknown as Preview
+    },
+    async saveHandwriting(name, plan, allowUnconfirmed) {
+      const response = await fetch('/api/handwriting/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ suggested_name: name, page_plan: plan, allow_unconfirmed: allowUnconfirmed }),
+      })
+      if (!response.ok) {
+        let message = `저장하지 못했습니다(${response.status}).`
+        try { message = (await response.json()).error || message } catch { /* 본문이 JSON 이 아니다 */ }
+        throw new Error(message)
+      }
+      const fileName = downloadName(response.headers.get('Content-Disposition'), name)
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(await response.blob())
+      link.download = fileName
+      document.body.append(link)
+      link.click()
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(link.href), 60_000)
+      let warnings: string[] = []
+      try { warnings = JSON.parse(decodeURIComponent(response.headers.get('X-Riffle-Warnings') || '[]')) } catch { /* 없으면 없는 대로 */ }
+      return { saved: true, name: fileName, warnings }
+    },
     async reset() {
       await json('/api/handwriting/reset', { method: 'POST' })
       await json('/api/documents/reset', { method: 'POST' })

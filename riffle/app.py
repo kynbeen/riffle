@@ -293,7 +293,11 @@ class ComposerApi:
             analysis = dict(self._handwriting_analysis)
             cached = self._handwriting_cache
         inspection = cached[1].as_dict() if cached and analysis["state"] == "ready" else None
+        from .review import review
+
         return {
+            # 새 화면이 쓰는 "확인할 쪽"과 요약. 옛 화면은 inspection 을 그대로 읽는다.
+            "review": review(inspection) if inspection else None,
             "source_name": source.name if source else None,
             "source_format": source.suffix.lower().lstrip(".") if source else None,
             "target_name": target.name if target else None,
@@ -411,6 +415,19 @@ class ComposerApi:
                 return self._ok(cancelled=True, **self._handwriting_status())
             self._set_handwriting_path("target", path)
             return self._ok(cancelled=False, **self._handwriting_status())
+        except Exception as exc:
+            return self._error(exc)
+
+    def open_folder(self, path: str) -> dict:
+        """저장한 파일이 있는 폴더를 열고 그 파일을 골라 둔다(새 화면의 `폴더 열기`)."""
+        try:
+            target = Path(path).expanduser().resolve()
+            if not target.exists():
+                raise PdfComposerError(f"파일을 찾을 수 없습니다: {target.name}")
+            import subprocess
+
+            subprocess.Popen(["explorer", f"/select,{target}"])
+            return self._ok()
         except Exception as exc:
             return self._error(exc)
 

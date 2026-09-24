@@ -110,6 +110,47 @@ button, input { font: inherit; color: inherit; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .note { padding: 12px 16px; border-radius: 12px; background: var(--bg-raised); color: var(--text-2); }
 
+/* 필기 옮기기 — 확인할 쪽 */
+.panel.wide { width: min(960px, 100%); align-self: start; }
+.headline { margin-top: 8px; }
+.cards { display: grid; gap: 16px; }
+.card {
+  display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start;
+  padding: 16px; border-radius: 16px; background: var(--bg-raised); transition: opacity 0.2s;
+}
+.card.ok, .card.excluded { opacity: 0.6; }
+.pages { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.page { margin: 0; display: grid; gap: 4px; }
+.sheet-of-paper {
+  position: relative; background: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  overflow: hidden; min-height: 120px;
+}
+.sheet-of-paper img { display: block; width: 100%; height: auto; }
+.sheet-of-paper img.ink { position: absolute; inset: 0; width: 100%; height: 100%; }
+.placeholder { display: grid; place-items: center; min-height: 160px; }
+.why { display: grid; gap: 8px; }
+.actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+
+.all summary { cursor: pointer; color: var(--text-2); padding: 4px 0; }
+.all summary:hover { color: var(--text); }
+.all-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 360px; overflow: auto; border-top: 1px solid var(--line); }
+.all-list li { display: flex; justify-content: space-between; gap: 16px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.all-list li.attention .t-caption { color: var(--accent); font-weight: 600; }
+
+.savebar { display: flex; gap: 16px; align-items: center; justify-content: flex-end; }
+.saved { display: grid; gap: 8px; padding: 16px; border-radius: 16px; background: var(--bg-raised); }
+
+.sheet-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.18); display: grid; place-items: center; padding: 16px; }
+.sheet {
+  width: min(420px, 100%); display: grid; gap: 12px; padding: 24px; border-radius: 16px;
+  background: var(--bg); box-shadow: var(--shadow);
+}
+.sheet-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+
+@media (max-width: 720px) {
+  .card { grid-template-columns: 1fr; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }

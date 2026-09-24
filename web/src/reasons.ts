@@ -1,0 +1,63 @@
+// 확인할 쪽의 이유 — 서버(riffle/review.py)는 종류만 보내고, 사람이 읽는 말은 여기 한 곳에 둔다(원칙 8).
+
+export type Reason = 'panel_ink' | 'old_only' | 'different' | 'duplicate' | 'alignment'
+
+export const REASON_WORDS: Record<Reason, { title: string; detail: string }> = {
+  panel_ink: {
+    title: '손필기가 필기 칸 위에 있습니다',
+    detail: '필기본을 다시 만들며 칸의 글이 바뀌었을 수 있습니다. 손필기가 엉뚱한 글 위에 얹히지 않았는지 봐 주세요.',
+  },
+  old_only: {
+    title: '새 PDF에 없는 쪽입니다',
+    detail: '필기를 잃지 않게 옛 쪽째 남깁니다. 새 PDF의 다른 쪽과 같은 쪽이라면 빼도 됩니다.',
+  },
+  different: {
+    title: '비슷하지만 달라진 곳이 있습니다',
+    detail: '같은 쪽으로 보고 짝지었지만 확신이 없습니다. 필기가 제자리에 있는지 봐 주세요.',
+  },
+  duplicate: {
+    title: '새 PDF에 똑같은 쪽이 하나 더 있습니다',
+    detail: '어느 쪽에 옮길지 확신이 없습니다. 이 짝이 맞는지 봐 주세요.',
+  },
+  alignment: {
+    title: '쪽 안 내용의 자리가 많이 달라졌습니다',
+    detail: '필기 위치를 새 쪽에 맞춰 옮겼습니다. 제자리에 있는지 봐 주세요.',
+  },
+}
+
+export interface ReviewItem {
+  slot: number
+  source_index: number | null
+  target_index: number | null
+  reason: Reason
+}
+
+export interface ReviewSummary {
+  matched: number
+  automatic: number
+  attention: number
+  new_pages: number
+  kept_old: number
+  omitted: number
+  result_pages: number
+}
+
+export interface Review {
+  items: ReviewItem[]
+  summary: ReviewSummary
+}
+
+// 머리 한 줄이 결론이다(명세 「필기 옮기기」).
+export function headline(summary: ReviewSummary, open: number): string {
+  if (summary.attention === 0) return `${summary.result_pages}쪽을 모두 자동으로 맞췄습니다.`
+  if (open === 0) return `${summary.automatic}쪽은 자동으로 맞췄고, ${summary.attention}쪽은 봐 주셨습니다.`
+  return `${summary.automatic}쪽은 자동으로 맞췄습니다. ${open}쪽만 봐 주세요.`
+}
+
+// 헤드라인 아래 작은 글 — 사람이 따로 할 일은 없지만 알아 두면 좋은 것.
+export function footnotes(summary: ReviewSummary): string[] {
+  const notes: string[] = []
+  if (summary.new_pages) notes.push(`새 PDF에서 새로 생긴 ${summary.new_pages}쪽은 필기 없이 들어갑니다.`)
+  if (summary.omitted) notes.push(`필기가 없는 옛 쪽 ${summary.omitted}쪽은 뺐습니다.`)
+  return notes
+}

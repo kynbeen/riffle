@@ -58,11 +58,14 @@ class NewUiBuildTests(unittest.TestCase):
         self.assertNotIn('src="/assets/', html)
 
     @unittest.skipUnless(shutil.which("node"), "Node 가 있어야 화면 규칙을 돌린다")
-    def test_file_rules_decide_what_to_do_from_the_dropped_files(self):
-        result = subprocess.run(["node", "--test", "src/classify.test.ts"], cwd=WEB,
+    def test_screen_rules_pass(self):
+        """파일 규칙(classify)·확인할 쪽 문장(reasons) 등 화면 안의 순수 함수 시험."""
+        tests = sorted(str(path.relative_to(WEB)) for path in (WEB / "src").glob("*.test.ts"))
+        self.assertIn("src\\classify.test.ts" if sys.platform == "win32" else "src/classify.test.ts", tests)
+        result = subprocess.run(["node", "--test", *tests], cwd=WEB,
                                 capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("pass 7", result.stdout)
+        self.assertIn("fail 0", result.stdout)
 
     def test_text_colors_have_enough_contrast_in_both_themes(self):
         css = (WEB / "src" / "styles.css").read_text(encoding="utf-8")

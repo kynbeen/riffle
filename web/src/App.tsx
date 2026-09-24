@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { backend, type Held, type HandwritingStatus } from './api'
+import { backend, type Held } from './api'
+import Handwriting from './Handwriting'
 import { decide } from './classify'
 
 // 첫 화면은 놓는 곳 하나다. 놓은 파일로 할 일을 정하고(classify.ts), 곧바로 시작한다(명세 2026-09-24-01).
@@ -23,7 +24,7 @@ export default function App() {
       </header>
       <main className="stage">
         {screen.kind === 'drop' && <DropScreen onStart={setScreen} />}
-        {screen.kind === 'handwriting' && <HandwritingScreen source={screen.source} target={screen.target} />}
+        {screen.kind === 'handwriting' && <Handwriting source={screen.source} target={screen.target} />}
         {screen.kind === 'merge' && <MergeScreen names={screen.names} />}
       </main>
     </div>
@@ -134,60 +135,6 @@ function DropScreen({ onStart }: { onStart: (screen: Screen) => void }) {
           void accept(files.map((file) => ({ name: file.name, file })))
         }}
       />
-    </section>
-  )
-}
-
-// 맞추는 동안의 단계는 사람 말로(명세 「필기 옮기기」).
-const STAGE_WORDS: Record<string, string> = {
-  waiting: '준비하는 중',
-  structure: '파일을 살펴보는 중',
-  matching: '쪽 짝짓는 중',
-  alignment: '필기 위치 맞추는 중',
-  preview: '미리보기 만드는 중',
-}
-
-function HandwritingScreen({ source, target }: { source: string; target: string }) {
-  const [status, setStatus] = useState<HandwritingStatus | null>(null)
-  const [failure, setFailure] = useState('')
-
-  useEffect(() => {
-    let alive = true
-    let timer = 0
-    const poll = async () => {
-      try {
-        const next = await backend.handwritingStatus()
-        if (!alive) return
-        setStatus(next)
-        setFailure('')
-        if (next.analysis.state === 'running' || next.analysis.state === 'waiting') timer = window.setTimeout(poll, 700)
-      } catch (error) {
-        if (alive) setFailure((error as Error).message)
-      }
-    }
-    void poll()
-    return () => { alive = false; window.clearTimeout(timer) }
-  }, [status?.analysis.state === 'error'])
-
-  const analysis = status?.analysis
-  return (
-    <section className="panel">
-      <div className="t-title">필기 옮기기</div>
-      <div className="files t-body"><b>{source}</b><span>→</span><b>{target}</b></div>
-      {failure && <div className="message error t-body">{failure}</div>}
-      {analysis?.state === 'error' ? (
-        <>
-          <div className="message error t-body">{analysis.error || '맞추지 못했습니다.'}</div>
-          <div><button className="button" onClick={async () => { await backend.retryHandwriting(); setStatus(null) }}>다시 시도</button></div>
-        </>
-      ) : analysis?.state === 'ready' ? (
-        <>
-          <div className="t-body">맞추기를 마쳤습니다.</div>
-          <div className="note t-body">확인할 쪽을 보여 주는 화면은 아직 만드는 중입니다. 지금은 기존 화면에서 이어서 저장해 주세요.</div>
-        </>
-      ) : (
-        <div className="status t-body"><span className="spinner" aria-hidden /><span>{STAGE_WORDS[analysis?.stage ?? 'waiting'] ?? '맞추는 중'}</span></div>
-      )}
     </section>
   )
 }

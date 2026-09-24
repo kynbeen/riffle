@@ -37,6 +37,8 @@ class TransferInspection:
     alignment: Alignment | None = None
     match: MatchResult | None = None
     source_order: tuple[dict, ...] = ()
+    # 원본이 Sleek 필기본일 때 오른쪽 필기 칸 위에 손필기가 있는 원본 쪽(0부터)
+    panel_ink_sources: tuple[int, ...] = ()
 
     def as_dict(self) -> dict:
         plan = None
@@ -47,6 +49,12 @@ class TransferInspection:
             if self.alignment is not None and self.alignment.requires_confirmation:
                 page_plan = replace(page_plan, slots=tuple(
                     replace(slot, confirmed=False) if slot.kind == "matched" else slot
+                    for slot in page_plan.slots
+                ))
+            if self.panel_ink_sources:
+                panel = set(self.panel_ink_sources)
+                page_plan = replace(page_plan, slots=tuple(
+                    replace(slot, confirmed=False) if slot.source_index in panel else slot
                     for slot in page_plan.slots
                 ))
             plan = page_plan.as_dict()
@@ -64,6 +72,7 @@ class TransferInspection:
             "match": self.match.as_dict() if self.match else None,
             "plan": plan,
             "source_order": list(self.source_order),
+            "panel_ink_sources": list(self.panel_ink_sources),
         }
 
 

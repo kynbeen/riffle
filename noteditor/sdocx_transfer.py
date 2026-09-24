@@ -49,6 +49,8 @@ _CENTRAL_HEADER = b"PK\x01\x02"
 _END_OF_CENTRAL = b"PK\x05\x06"
 _ZIP32_LIMIT = 0xFFFFFFFF
 _COPY_CHUNK = 1 << 20
+# 슬라이드 끝에 걸친 획까지 칸 위 필기로 잡지 않게 경계선 너머 이만큼(pt)은 봐준다.
+_PANEL_EDGE_SLACK = 2.0
 
 
 class SdocxTransferError(HandwritingTransferError):
@@ -514,6 +516,7 @@ def inspect_transfer(
         annotated_pages = sum(size > 358 for size in page_sizes)
         spi_count = sum(name.lower().endswith(".spi") for name in members)
         source_order = []
+        page_blobs: dict[int, bytes] = {}
         try:
             from .sdocx_page import is_blank_page
 
@@ -523,17 +526,22 @@ def inspect_transfer(
             for number, entry in enumerate(order.entries, 1):
                 blob = archive.read(str(root / f"{entry.uuid}.page"))
                 info = read_page(blob)
+                blank = is_blank_page(blob)
                 source_order.append({
                     "page_id": entry.uuid,
                     "page_number": number,
                     "source_index": info.pdf.page_index if info.pdf else None,
-                    "blank": is_blank_page(blob),
+                    "blank": blank,
                 })
+                if info.pdf is not None and not blank:
+                    page_blobs[info.pdf.page_index] = blob
         except (SdocxTransferError, RuntimeError, KeyError, ValueError, struct.error):
             # Legacy exports may have only a readable PDF, without page metadata.
             source_order = []
+            page_blobs = {}
     finally:
         archive.close()
+    panel_ink = _panel_ink_sources(embedded_pdf, page_blobs)
 
     mode, alignment, page_count, match = plan_transfer(
         embedded_pdf,
@@ -556,7 +564,38 @@ def inspect_transfer(
         alignment=alignment,
         match=match,
         source_order=tuple(source_order),
+        panel_ink_sources=panel_ink,
     )
+
+
+def _panel_ink_sources(embedded_pdf: bytes, page_blobs: dict[int, bytes]) -> tuple[int, ...]:
+    """원본이 Sleek 필기본일 때 오른쪽 필기 칸 위에 손필기가 있는 원본 쪽 번호(0부터).
+
+    칸의 글은 필기본을 다시 만들 때마다 바뀔 수 있어, 그 위 손필기는 옮겨도 엉뚱한 글 위에
+    얹힐 수 있다. 옮기기는 하되 사람이 확인하도록 알린다.
+    """
+    from .sdocx_ink import read_ink_strokes
+    from .sleek_notes import original_box
+
+    if not page_blobs:
+        return ()
+    found = []
+    with _open_pdf(embedded_pdf, "SDOCX 내장 PDF") as document:
+        for index, blob in sorted(page_blobs.items()):
+            if not 0 <= index < document.page_count:
+                continue
+            page = document[index]
+            box = original_box(page)
+            if box is None:
+                continue
+            try:
+                width, _height, strokes = read_ink_strokes(blob)
+            except Exception:
+                continue
+            edge = (box.x1 + _PANEL_EDGE_SLACK) * width / page.rect.width
+            if any(x > edge for stroke in strokes for x, _y in stroke.points):
+                found.append(index)
+    return tuple(found)
 
 
 def preview_native_page(

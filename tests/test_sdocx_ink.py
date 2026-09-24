@@ -18,8 +18,10 @@ def _delta(value: float) -> int:
     return sign | (integer << 5) | fraction
 
 
-def make_stroke_layers() -> bytes:
-    points = [(100.0, 200.0), (110.0, 205.0), (106.0, 212.0)]
+def make_stroke_layers(
+    points: list[tuple[float, float]] | None = None,
+) -> bytes:
+    points = points or [(100.0, 200.0), (110.0, 205.0), (106.0, 212.0)]
     geometry = bytearray(struct.pack("<dd", *points[0]))
     for (left_x, left_y), (right_x, right_y) in zip(points, points[1:]):
         geometry += struct.pack("<HH", _delta(right_x - left_x), _delta(right_y - left_y))

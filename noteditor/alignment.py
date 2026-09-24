@@ -19,6 +19,7 @@ from pathlib import Path
 from statistics import median
 
 from . import pdf as pymupdf
+from .sleek_notes import content_rect, original_box
 
 _INK_MAX_SIDE = 1200
 _INK_TOLERANCE = 6
@@ -123,13 +124,18 @@ def _sample_indices(page_count: int, limit: int) -> list[int]:
 
 
 def ink_box(page, max_side: int = _INK_MAX_SIDE):
-    """페이지에서 잉크가 있는 영역을 PDF 좌표로 돌려준다. 빈 쪽이면 ``None``."""
-    rect = page.rect
+    """페이지에서 잉크가 있는 영역을 PDF 좌표로 돌려준다. 빈 쪽이면 ``None``.
+
+    Sleek 필기본 쪽은 오른쪽 필기 칸을 빼고 원래 강의록 쪽 상자 안에서만 찾는다.
+    """
+    clip = original_box(page)
+    rect = clip or page.rect
     if rect.is_empty or rect.is_infinite:
         return None
     scale = min(max_side / max(rect.width, rect.height), 4.0)
+    options = {} if clip is None else {"clip": clip}
     pixmap = page.get_pixmap(
-        matrix=pymupdf.Matrix(scale, scale), colorspace=pymupdf.csGRAY, alpha=False
+        matrix=pymupdf.Matrix(scale, scale), colorspace=pymupdf.csGRAY, alpha=False, **options
     )
     width, height, samples = pixmap.width, pixmap.height, pixmap.samples
     if width < 2 or height < 2:
@@ -217,7 +223,7 @@ def estimate_alignment(
             abs(new.x1 - old.x1), abs(new.y1 - old.y1),
         )
         aspect_drift = max(aspect_drift, abs(aspect_scale - scale) * new.height)
-        page_rect = source_document[index].rect
+        page_rect = content_rect(source_document[index])
         clipped = max(
             clipped,
             page_rect.x0 - left, page_rect.y0 - top,

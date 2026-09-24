@@ -758,6 +758,7 @@ function renderHandwritingStatus(error = "") {
         `새 PDF 전용 ${match.target_only.length}쪽 추가 · 구판 전용 ${preservedOld}쪽 보존 검토${omittedBlank ? ` · 빈 원본 ${omittedBlank}쪽 자동 생략` : ""} · 불확실 ${match.uncertain_count}쌍`,
         info.alignment ? `본문 배율 ${info.alignment.scale.toFixed(3)}배 · 이동 ${info.alignment.offset_x_mm}, ${info.alignment.offset_y_mm}mm` : "공통 쪽의 페이지 좌표가 일치합니다.",
         ...(info.alignment ? alignmentWarnings(info.alignment) : []),
+        ...panelInkWarnings(info.panel_ink_sources),
         common,
       ].join("\n");
     } else if (info.mode === "aligned" && info.alignment) {
@@ -766,11 +767,13 @@ function renderHandwritingStatus(error = "") {
       detail.textContent = [
         `이동 ${fit.offset_x_mm}, ${fit.offset_y_mm}mm · 본문 오차 최대 ${fit.residual_mm}mm (${fit.sampled_pages}쪽 표본)`,
         ...alignmentWarnings(fit),
+        ...panelInkWarnings(info.panel_ink_sources),
         common,
       ].join("\n");
     } else {
       heading.textContent = `${info.page_count}쪽의 페이지 좌표가 모두 일치합니다.`;
-      detail.textContent = `${common} · 대상 PDF를 그대로 넣습니다.`;
+      detail.textContent = [`${common} · 대상 PDF를 그대로 넣습니다.`,
+        ...panelInkWarnings(info.panel_ink_sources)].join("\n");
     }
     if (info.alignment?.requires_confirmation) {
       card.classList.remove("ready");
@@ -786,10 +789,18 @@ function renderHandwritingStatus(error = "") {
   detail.textContent = "쪽이 추가·삭제됐으면 공통 쪽을 자동으로 찾고, 크기나 여백이 달라지면 본문을 기준으로 자동 정렬합니다.";
 }
 
-function clonePagePlan(plan, sourceOrder = []) {
+function panelInkWarnings(sources = []) {
+  if (!sources.length) return [];
+  const pages = sources.slice(0, 8).map((index) => index + 1).join(", ");
+  return [`원본 ${pages}${sources.length > 8 ? "…" : ""}쪽의 손필기가 Sleek 필기 칸 위에 있습니다. `
+    + "필기본을 다시 만들며 칸의 글이 바뀌었을 수 있으니 해당 쪽을 확인하세요."];
+}
+
+function clonePagePlan(plan, sourceOrder = [], panelInkSources = []) {
   const blankSources = new Set(sourceOrder
     .filter((page) => page.blank && page.source_index !== null)
     .map((page) => page.source_index));
+  const panelInk = new Set(panelInkSources);
   return (plan?.slots || []).map((slot) => {
     const autoOmitted = slot.target_index === null && blankSources.has(slot.source_index);
     return {
@@ -800,12 +811,14 @@ function clonePagePlan(plan, sourceOrder = []) {
       excluded: autoOmitted || Boolean(slot.excluded),
       auto_omitted: autoOmitted,
       attention: !autoOmitted && Boolean(slot.needs_confirmation || slot.kind !== "matched"),
+      panel_ink: panelInk.has(slot.source_index),
     };
   });
 }
 
 function reviewBadge(slot) {
   if (slot.excluded) return "결과에서 제외";
+  if (slot.panel_ink && !slot.confirmed) return "필기 칸 위 손필기 확인";
   if (slot.source_index === null) return "새 쪽";
   if (slot.target_index === null) return "원본 쪽 보존";
   if (slot.manual) return "수동 정렬";
@@ -1269,7 +1282,8 @@ function applyHandwritingResponse(response) {
     ready: Boolean(response.ready),
     inspection: response.inspection || null,
     plan: (selectionChanged || becameReady || !previous.plan?.length)
-      ? clonePagePlan(response.inspection?.plan, response.inspection?.source_order || [])
+      ? clonePagePlan(response.inspection?.plan, response.inspection?.source_order || [],
+        response.inspection?.panel_ink_sources || [])
       : previous.plan,
     analysis: response.analysis || {
       state: response.ready ? "ready" : "waiting",

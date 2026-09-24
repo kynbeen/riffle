@@ -222,14 +222,36 @@ def _distance_matrix(
     return [[distance(left, right) for right in target] for left in source]
 
 
-def _margin(matrix: list[list[float]], row: int, column: int) -> float | None:
-    """짝지어진 상대 말고 두 번째로 닮은 후보와의 거리 차이. 작을수록 애매하다."""
+def _margin(
+    matrix: list[list[float]],
+    row: int,
+    column: int,
+    source: list[PageFingerprint] | None = None,
+    target: list[PageFingerprint] | None = None,
+) -> float | None:
+    """짝지어진 상대 말고 두 번째로 닮은 후보와의 거리 차이. 작을수록 애매하다.
+
+    짝 바로 앞뒤로 **이어 붙은 똑같은** 쪽은 후보에서 뺀다. Sleek 필기본은 필기가 길면 같은
+    슬라이드를 곧바로 다시 싣는데, 그런 사본은 순서가 이미 첫 사본을 골랐다. 떨어진 곳에 있는
+    똑같은 쪽은 그대로 후보로 남겨 사람이 확인하게 한다.
+    """
+    def run(pages, index) -> range:
+        if pages is None or pages[index].blank:
+            return range(index, index + 1)
+        start = end = index
+        while start > 0 and pages[start - 1].cells == pages[index].cells:
+            start -= 1
+        while end + 1 < len(pages) and pages[end + 1].cells == pages[index].cells:
+            end += 1
+        return range(start, end + 1)
+
+    target_copies, source_copies = run(target, column), run(source, row)
     best = math.inf
     for other in range(len(matrix[row])):
-        if other != column:
+        if other not in target_copies:
             best = min(best, matrix[row][other])
     for other in range(len(matrix)):
-        if other != row:
+        if other not in source_copies:
             best = min(best, matrix[other][column])
     if math.isinf(best):
         return None
@@ -271,9 +293,11 @@ def match_fingerprints(
             skip_target = row_here[j - 1] + gap_cost
             best = matched
             taken = _MATCH
-            if skip_source < best:
+            # 짝짓기와 비용이 정확히 같으면 건너뛰기를 고른다. 역추적은 끝에서 오므로, 똑같은
+            # 사본이 이어질 때(Sleek 필기본의 "이어서" 쪽) 앞쪽 사본끼리 짝지어진다.
+            if skip_source <= best:
                 best, taken = skip_source, _SKIP_SOURCE
-            if skip_target < best:
+            if skip_target < best or (taken == _MATCH and skip_target == best):
                 best, taken = skip_target, _SKIP_TARGET
             row_here[j] = best
             row_choice[j] = taken
@@ -293,7 +317,7 @@ def match_fingerprints(
                     source_index=i - 1,
                     target_index=j - 1,
                     distance=matrix[i - 1][j - 1],
-                    margin=_margin(matrix, i - 1, j - 1),
+                    margin=_margin(matrix, i - 1, j - 1, source, target),
                 )
             )
             i -= 1

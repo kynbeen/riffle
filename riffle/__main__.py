@@ -9,10 +9,11 @@ from .app import configure_logging, run
 def main() -> None:
     parser = argparse.ArgumentParser(description="Riffle 데스크톱 앱을 실행합니다.")
     parser.add_argument("--debug", action="store_true", help="개발자 도구와 디버그 로그를 켭니다.")
+    parser.add_argument("--new-ui", action="store_true", help="만들고 있는 새 화면으로 엽니다.")
     args = parser.parse_args()
     log_path = configure_logging()
     try:
-        run(debug=args.debug)
+        run(debug=args.debug, new_ui=args.new_ui)
     except Exception as exc:
         with log_path.open("a", encoding="utf-8") as log:
             log.write(traceback.format_exc())

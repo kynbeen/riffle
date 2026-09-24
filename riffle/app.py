@@ -356,6 +356,26 @@ class ComposerApi:
         except Exception as exc:
             return self._error(exc)
 
+    def choose_files(self) -> dict:
+        """새 화면의 `파일 고르기`. 필기 파일과 PDF를 한 창에서 여러 개 고른다 — 무엇을 할지는 화면이 정한다."""
+        try:
+            if self._window is None:
+                raise PdfComposerError("앱 창이 아직 준비되지 않았습니다.")
+            import webview
+
+            selected = self._window.create_file_dialog(
+                webview.FileDialog.OPEN,
+                allow_multiple=True,
+                file_types=(
+                    "필기 파일과 PDF (*.sdocx;*.notewise;*.goodnotes;*.pdf)",
+                    "모든 파일 (*.*)",
+                ),
+            )
+            files = [Path(item) for item in (selected or ())]
+            return self._ok(files=[{"name": path.name, "path": str(path)} for path in files])
+        except Exception as exc:
+            return self._error(exc)
+
     def choose_handwriting_source(self) -> dict:
         try:
             if self._window is None:
@@ -578,12 +598,43 @@ class ComposerApi:
         self._session.close()
 
 
-def run(debug: bool = False) -> None:
+NEW_UI_ENTRY = Path(__file__).with_name("ui") / "index.html"
+OLD_UI_ENTRY = Path(__file__).with_name("static") / "index.html"
+
+
+def _dropped_files(event: dict) -> list[dict]:
+    """창에 놓은 파일의 이름과 전체 경로. 브라우저는 경로를 숨기고 pywebview 만 알려 준다."""
+    files = (event.get("dataTransfer") or {}).get("files") or []
+    return [
+        {"name": item.get("name") or Path(item["pywebviewFullPath"]).name,
+         "path": item["pywebviewFullPath"]}
+        for item in files if item.get("pywebviewFullPath")
+    ]
+
+
+def _bind_file_drop(window: Any) -> None:
+    """창에 놓은 파일의 경로를 새 화면으로 밀어 준다(`window.__riffleDropped`)."""
+    import json
+
+    from webview.dom import DOMEventHandler
+
+    def on_drop(event: dict) -> None:
+        files = _dropped_files(event)
+        if files:
+            window.evaluate_js(
+                f"window.__riffleDropped && window.__riffleDropped({json.dumps(files, ensure_ascii=False)})"
+            )
+
+    window.dom.document.events.drop += DOMEventHandler(on_drop, prevent_default=True, stop_propagation=True)
+
+
+def run(debug: bool = False, new_ui: bool = False) -> None:
     configure_windows_app_identity()
     import webview
 
     api = ComposerApi()
-    static_file = Path(__file__).with_name("static") / "index.html"
+    # 새 화면(명세 2026-09-24-01)은 옛 화면을 지우기 전까지 `--new-ui` 로만 연다.
+    static_file = NEW_UI_ENTRY if new_ui else OLD_UI_ENTRY
     window = webview.create_window(
         "Riffle",
         str(static_file.resolve()) + "#desktop",
@@ -597,6 +648,8 @@ def run(debug: bool = False) -> None:
     )
     api._bind_window(window)
     window.events.closed += api._close
+    if new_ui:
+        window.events.loaded += lambda: _bind_file_drop(window)
     icon = Path(__file__).parents[1] / "assets" / "icon.ico"
     webview.start(
         debug=debug,

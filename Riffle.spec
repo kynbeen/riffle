@@ -16,6 +16,7 @@ desktop_a = Analysis(
     binaries=webview_binaries,
     datas=webview_data + [
         ("riffle/static", "riffle/static"),
+        ("riffle/ui", "riffle/ui"),
         ("assets/icon.ico", "assets"),
     ],
     hiddenimports=webview_hidden + collect_submodules("pymupdf") + ["pikepdf"] + version_stamp,
@@ -32,6 +33,7 @@ local_web_a = Analysis(
     binaries=[],
     datas=[
         ("riffle/static", "riffle/static"),
+        ("riffle/ui", "riffle/ui"),
         ("assets/icon.ico", "assets"),
     ],
     hiddenimports=collect_submodules("pymupdf") + ["pikepdf", "riffle.web"] + version_stamp,

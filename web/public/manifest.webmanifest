@@ -1,0 +1,17 @@
+{
+  "name": "Riffle",
+  "short_name": "Riffle",
+  "description": "옛 필기를 새 PDF로 옮기고, PDF 쪽을 골라 합칩니다.",
+  "lang": "ko-KR",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

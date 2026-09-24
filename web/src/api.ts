@@ -56,20 +56,22 @@ export interface Saved {
 export interface Backend {
   runtime: 'desktop' | 'web'
   health(): Promise<{ version: string }>
+  logError(message: string): Promise<void>
   // 데스크톱은 파일 고르기 창을 띄워 경로를 받는다. 웹은 화면이 <input type=file> 로 고른다.
   pickFiles?(): Promise<Held[]>
   startHandwriting(source: Held, target: Held, progress?: (share: number) => void): Promise<void>
   // 합칠 PDF 를 올린다(더 놓아도 같은 입구). 지금까지 올린 문서 전부를 돌려준다.
   startMerge(pdfs: Held[], progress?: (share: number) => void): Promise<Doc[]>
   removeDocument(id: string): Promise<void>
-  pageImage(id: string, page: number, kind: 'thumbnail' | 'preview'): Promise<string>
+  // signal: 화면이 사라지면 거둔다 — 비운 뒤에 도착한 요청이 실패로 기록되지 않게.
+  pageImage(id: string, page: number, kind: 'thumbnail' | 'preview', signal?: AbortSignal): Promise<string>
   // `1-3, 5, 8-` 같은 범위 글 → 쪽 번호(0부터). 규칙은 서버 한 곳(riffle/ranges.py)에만 있다.
   parseRange(text: string, pageCount: number): Promise<number[]>
   saveMerge(order: Ref[], name: string): Promise<Saved>
   handwritingStatus(): Promise<HandwritingStatus>
   retryHandwriting(): Promise<void>
   // 새 쪽(targetIndex)에 옛 쪽(sourceIndex)의 손필기를 얹어 본다. 한쪽이 없으면 -1.
-  preview(targetIndex: number, sourceIndex: number): Promise<Preview>
+  preview(targetIndex: number, sourceIndex: number, signal?: AbortSignal): Promise<Preview>
   saveHandwriting(name: string, plan: PlanRow[], allowUnconfirmed: boolean): Promise<Saved>
   openFolder?(path: string): Promise<void>
   reset(): Promise<void>
@@ -110,6 +112,7 @@ function desktop(): Backend {
   return {
     runtime: 'desktop',
     async health() { return (await call('health')) as unknown as { version: string } },
+    async logError(message) { await call('log_client_error', message) },
     async pickFiles() {
       const reply = await call('choose_files')
       return (reply.files as { name: string; path: string }[]) ?? []
@@ -211,6 +214,10 @@ function web(): Backend {
   return {
     runtime: 'web',
     async health() { return (await json('/api/health')) as unknown as { version: string } },
+    async logError(message) {
+      await json('/api/client-error', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ message }) })
+    },
     async startHandwriting(source, target, progress) {
       const total = (source.file?.size ?? 0) + (target.file?.size ?? 0) || 1
       const sourceForm = new FormData()
@@ -227,8 +234,8 @@ function web(): Backend {
       return (await upload('/api/documents', form, progress)).sources as Doc[]
     },
     async removeDocument(id) { await json(`/api/documents/${encodeURIComponent(id)}`, { method: 'DELETE' }) },
-    async pageImage(id, page, kind) {
-      return (await json(`/api/documents/${encodeURIComponent(id)}/pages/${page}?kind=${kind}`)).image as string
+    async pageImage(id, page, kind, signal) {
+      return (await json(`/api/documents/${encodeURIComponent(id)}/pages/${page}?kind=${kind}`, { signal })).image as string
     },
     async parseRange(text, pageCount) {
       const reply = await json('/api/ranges', {
@@ -242,9 +249,9 @@ function web(): Backend {
     },
     async handwritingStatus() { return (await json('/api/handwriting/status')) as unknown as HandwritingStatus },
     async retryHandwriting() { await json('/api/handwriting/retry', { method: 'POST' }) },
-    async preview(targetIndex, sourceIndex) {
+    async preview(targetIndex, sourceIndex, signal) {
       const query = new URLSearchParams({ page_index: String(targetIndex), source_index: String(sourceIndex) })
-      return (await json(`/api/handwriting/preview?${query}`)) as unknown as Preview
+      return (await json(`/api/handwriting/preview?${query}`, { signal })) as unknown as Preview
     },
     async saveHandwriting(name, plan, allowUnconfirmed) {
       return download('/api/handwriting/export',

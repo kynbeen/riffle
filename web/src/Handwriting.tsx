@@ -44,6 +44,9 @@ export default function Handwriting({ source, target }: { source: string; target
     <section className="panel wide">
       <div className="t-title">필기 옮기기</div>
       <div className="files t-body"><b>{source}</b><span>→</span><b>{target}</b></div>
+      {source.toLowerCase().endsWith('.goodnotes') && (
+        <div className="t-caption">Goodnotes 옮기기는 아직 실험 단계입니다. 저장한 파일을 Goodnotes에서 열어 확인해 주세요.</div>
+      )}
       {failure && <div className="message error t-body">{failure}</div>}
       {analysis?.state === 'error' ? (
         <>
@@ -166,10 +169,7 @@ function Ready({ review, initial, source }: { review: Review; initial: PlanSlot[
           <div className="t-caption">
             {`자동 ${counts.automatic} · 확인 ${counts.checked} · 옛 쪽째 남김 ${counts.kept_old} · 뺀 쪽 ${counts.omitted + counts.dropped}`}
           </div>
-          {(saved.warnings ?? [])
-            // 확인하지 않고 저장한 쪽 수는 위 요약 줄이 이미 말한다 — 옛 화면용 문장을 되풀이하지 않는다.
-            .filter((warning) => !warning.startsWith('확인하지 않은 쪽 대응'))
-            .map((warning) => <div className="t-caption" key={warning}>{warning}</div>)}
+          {/* 필기 옮기기 결과의 경고는 "확인 안 한 쪽을 승인하고 저장함" 하나뿐이고, 위 요약 줄이 이미 말한다. */}
           {saved.path && backend.openFolder && (
             <div><button className="button quiet" onClick={() => backend.openFolder!(saved.path!)}>폴더 열기</button></div>
           )}
@@ -188,7 +188,7 @@ function Ready({ review, initial, source }: { review: Review; initial: PlanSlot[
           onKeyDown={(event) => { if (event.key === 'Escape') setAsking(false) }}>
           <div className="sheet">
             <div className="t-title">{open}쪽을 아직 보지 않았습니다</div>
-            <div className="t-body">기계가 맞춘 대로 저장합니다. 원본은 그대로 남아 있어 언제든 다시 옮길 수 있습니다.</div>
+            <div className="t-body">기계가 맞춘 대로 저장합니다. 옛 필기 파일은 그대로 남아 있어 언제든 다시 옮길 수 있습니다.</div>
             <div className="sheet-actions">
               <button className="button quiet" autoFocus onClick={() => setAsking(false)}>돌아가기</button>
               <button className="button" onClick={() => void save(true)}>그대로 저장</button>
@@ -211,19 +211,19 @@ function Card({ source, target, reason, mark, chosen, targetCount, thumbnails, o
   const [failed, setFailed] = useState('')
   const [picking, setPicking] = useState(false)
   useEffect(() => {
-    let alive = true
-    backend.preview(-1, source).then((view) => { if (alive) setOldView(view) })
-      .catch((error: Error) => { if (alive) setFailed(error.message) })
-    return () => { alive = false }
+    const stop = new AbortController()
+    backend.preview(-1, source, stop.signal).then(setOldView)
+      .catch((error: Error) => { if (!stop.signal.aborted) setFailed(error.message) })
+    return () => stop.abort()
   }, [source])
   useEffect(() => {
-    let alive = true
+    const stop = new AbortController()
     setNewView(null)
     if (target !== null) {
-      backend.preview(target, source).then((view) => { if (alive) setNewView(view) })
-        .catch((error: Error) => { if (alive) setFailed(error.message) })
+      backend.preview(target, source, stop.signal).then(setNewView)
+        .catch((error: Error) => { if (!stop.signal.aborted) setFailed(error.message) })
     }
-    return () => { alive = false }
+    return () => stop.abort()
   }, [source, target])
   const words = chosen
     ? { title: '직접 고른 짝입니다', detail: '옛 필기를 고르신 새 쪽에 얹습니다. 제자리에 있는지 봐 주세요.' }
@@ -274,18 +274,19 @@ function TargetPicker({ count, current, thumbnails, onPick, onClose }: {
   useEffect(() => {
     const root = strip.current
     if (!root) return
+    const stop = new AbortController()
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         if (!entry.isIntersecting) continue
         const index = Number((entry.target as HTMLElement).dataset.index)
         observer.unobserve(entry.target)
         if (thumbnails.has(index)) continue
-        backend.preview(index, -1).then((view) => { thumbnails.set(index, view.after); redraw((n) => n + 1) }).catch(() => {})
+        backend.preview(index, -1, stop.signal).then((view) => { thumbnails.set(index, view.after); redraw((n) => n + 1) }).catch(() => {})
       }
     }, { root, rootMargin: '0px 400px' })
     root.querySelectorAll('[data-index]').forEach((node) => observer.observe(node))
     root.querySelector('.current')?.scrollIntoView({ inline: 'center', block: 'nearest' })
-    return () => observer.disconnect()
+    return () => { observer.disconnect(); stop.abort() }
   }, [thumbnails])
   return (
     <div className="picker" onKeyDown={(event) => { if (event.key === 'Escape') onClose() }}>

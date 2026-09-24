@@ -499,12 +499,9 @@ async def export_handwriting(request: Request, payload: HandwritingExportRequest
     )
 
 
-STATIC_DIR = Path(__file__).with_name("static")
-# 새 화면(명세 2026-09-24-01)은 옛 화면을 지우기 전까지 /new/ 에서 연다.
+# 화면은 web/ 에서 빌드한 riffle/ui 다(명세 2026-09-24-01). 데스크톱 창과 같은 빌드다.
 UI_DIR = Path(__file__).with_name("ui")
-if UI_DIR.is_dir():
-    app.mount("/new", StaticFiles(directory=UI_DIR, html=True), name="ui")
-app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+app.mount("/", StaticFiles(directory=UI_DIR, html=True), name="ui")
 
 
 def main() -> None:

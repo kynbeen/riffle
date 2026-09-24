@@ -15,7 +15,6 @@ desktop_a = Analysis(
     pathex=[],
     binaries=webview_binaries,
     datas=webview_data + [
-        ("riffle/static", "riffle/static"),
         ("riffle/ui", "riffle/ui"),
         ("assets/icon.ico", "assets"),
     ],
@@ -32,7 +31,6 @@ local_web_a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ("riffle/static", "riffle/static"),
         ("riffle/ui", "riffle/ui"),
         ("assets/icon.ico", "assets"),
     ],

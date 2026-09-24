@@ -28,9 +28,6 @@ class FakeWindow:
         self.dialog_calls.append(kwargs)
         return self.responses.pop(0)
 
-    def toggle_fullscreen(self):
-        self.fullscreen_toggled = True
-
 
 class FakeEvent:
     def __init__(self):
@@ -150,15 +147,9 @@ class ComposerApiTests(unittest.TestCase):
         # 릴리스 빌드는 `0.5.0`, 개발 체크아웃은 `0.5.0+3.gbf90fcf` 처럼 뒤에 빌드 정보가 붙는다.
         self.assertRegex(result["version"], r"^\d+(\.\d+)*(\+[0-9a-z.]+)?$")
 
-    def test_fullscreen_toggle_uses_the_native_window(self):
-        window = FakeWindow([])
-        self.api._bind_window(window)
-        self.assertTrue(self.api.toggle_fullscreen()["ok"])
-        self.assertTrue(window.fullscreen_toggled)
-
     def test_desktop_window_starts_maximized(self):
-        closed = FakeEvent()
-        window = SimpleNamespace(events=SimpleNamespace(closed=closed))
+        closed, loaded = FakeEvent(), FakeEvent()
+        window = SimpleNamespace(events=SimpleNamespace(closed=closed, loaded=loaded))
         webview = SimpleNamespace(
             create_window=Mock(return_value=window),
             start=Mock(),
@@ -169,7 +160,10 @@ class ComposerApiTests(unittest.TestCase):
 
         self.assertTrue(webview.create_window.call_args.kwargs["maximized"])
         self.assertEqual(webview.create_window.call_args.kwargs["min_size"], (1080, 680))
-        self.assertTrue(webview.create_window.call_args.args[1].endswith("index.html#desktop"))
+        entry = webview.create_window.call_args.args[1]
+        self.assertTrue(entry.endswith("index.html#desktop"))
+        self.assertIn("\\riffle\\ui\\" if "\\" in entry else "/riffle/ui/", entry)   # 새 화면 빌드를 연다
+        self.assertIsNotNone(loaded.callback)                          # 창에 놓은 파일 경로 전달을 건다
         self.assertTrue(webview.start.call_args.kwargs["http_server"])
         self.assertIsNotNone(closed.callback)
         closed.callback()

@@ -16,7 +16,7 @@ from riffle.app import ComposerApi
 
 
 def main() -> None:
-    page = ROOT / "riffle" / "static" / "index.html"
+    page = ROOT / "riffle" / "ui" / "index.html"
     api = ComposerApi()
     window = webview.create_window(
         "PDF Page Composer bridge smoke test",

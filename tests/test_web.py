@@ -608,7 +608,7 @@ class WorkspaceIsolationTests(unittest.TestCase):
         그때 자산마다 작업공간이 생기면, 접속 한 번에 아무도 쓰지 않는 임시 폴더가
         여러 개 만들어져 세션 수명(기본 2시간) 내내 디스크에 남는다.
         """
-        for path in ("/", "/app.js", "/app.css", "/sw.js", "/manifest.webmanifest"):
+        for path in ("/", "/sw.js", "/manifest.webmanifest", "/icons/icon-192.png"):
             client = TestClient(app)  # 아직 쿠키를 받지 못한 병렬 요청
             self.assertEqual(client.get(path).status_code, 200, path)
         self.assertEqual(len(store._sessions), 1)
@@ -625,7 +625,8 @@ class WorkspaceIsolationTests(unittest.TestCase):
         client = TestClient(app)
         with client:
             client.cookies.clear()
-            client.get("/app.js")
+            client.get("/sw.js")
+            client.get("/icons/icon-192.png")
             self.assertEqual(len(store._sessions), 0)
 
     def test_per_user_responses_forbid_shared_caching(self):

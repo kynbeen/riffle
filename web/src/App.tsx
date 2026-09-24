@@ -14,15 +14,18 @@ type Screen =
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>({ kind: 'drop' })
+  const [version, setVersion] = useState('')
+  useEffect(() => { backend.health().then((reply) => setVersion(reply.version)).catch(() => {}) }, [])
+  // 화면을 먼저 닫아 남은 미리보기 요청을 거둔 뒤 서버를 비운다(거꾸로 하면 늦게 온 요청이 실패로 남는다).
   const back = useCallback(async () => {
-    try { await backend.reset() } catch { /* 비우기에 실패해도 첫 화면으로는 돌아간다 */ }
     setScreen({ kind: 'drop' })
+    try { await backend.reset() } catch { /* 비우기에 실패해도 첫 화면으로는 돌아간다 */ }
   }, [])
   return (
     <div className="app">
       <header className="topbar">
         {screen.kind !== 'drop' && <button className="back" onClick={back} aria-label="처음으로">←</button>}
-        <span className="wordmark">Riffle</span>
+        <span className="wordmark" title={version ? `Riffle ${version}` : undefined}>Riffle</span>
       </header>
       <main className="stage">
         {screen.kind === 'drop' && <DropScreen onStart={setScreen} />}

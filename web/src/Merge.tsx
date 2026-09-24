@@ -225,6 +225,7 @@ function Strip({ items, thumbs, onClick, label, draggable, onMove, controls }: {
   useEffect(() => {
     const element = root.current
     if (!element) return
+    const stop = new AbortController()
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         if (!entry.isIntersecting) continue
@@ -232,12 +233,12 @@ function Strip({ items, thumbs, onClick, label, draggable, onMove, controls }: {
         const name = `${node.dataset.id}:${node.dataset.page}`
         observer.unobserve(node)
         if (thumbs.has(name)) continue
-        backend.pageImage(node.dataset.id!, Number(node.dataset.page), 'thumbnail')
+        backend.pageImage(node.dataset.id!, Number(node.dataset.page), 'thumbnail', stop.signal)
           .then((image) => { thumbs.set(name, image); redraw((n) => n + 1) }).catch(() => {})
       }
     }, { root: element, rootMargin: '0px 600px' })
     element.querySelectorAll('[data-page]').forEach((node) => observer.observe(node))
-    return () => observer.disconnect()
+    return () => { observer.disconnect(); stop.abort() }
   }, [items, thumbs])
   return (
     <div className="strip merge-strip" ref={root}>

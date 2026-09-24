@@ -126,15 +126,6 @@ class ComposerApi:
         logging.getLogger("riffle").error("UI error: %s", message)
         return self._ok()
 
-    def toggle_fullscreen(self) -> dict:
-        try:
-            if self._window is None:
-                raise PdfComposerError("앱 창이 아직 준비되지 않았습니다.")
-            self._window.toggle_fullscreen()
-            return self._ok()
-        except Exception as exc:
-            return self._error(exc)
-
     def choose_pdfs(self) -> dict:
         try:
             if self._window is None:
@@ -615,8 +606,7 @@ class ComposerApi:
         self._session.close()
 
 
-NEW_UI_ENTRY = Path(__file__).with_name("ui") / "index.html"
-OLD_UI_ENTRY = Path(__file__).with_name("static") / "index.html"
+UI_ENTRY = Path(__file__).with_name("ui") / "index.html"
 
 
 def _dropped_files(event: dict) -> list[dict]:
@@ -645,13 +635,13 @@ def _bind_file_drop(window: Any) -> None:
     window.dom.document.events.drop += DOMEventHandler(on_drop, prevent_default=True, stop_propagation=True)
 
 
-def run(debug: bool = False, new_ui: bool = False) -> None:
+def run(debug: bool = False) -> None:
     configure_windows_app_identity()
     import webview
 
     api = ComposerApi()
-    # 새 화면(명세 2026-09-24-01)은 옛 화면을 지우기 전까지 `--new-ui` 로만 연다.
-    static_file = NEW_UI_ENTRY if new_ui else OLD_UI_ENTRY
+    # 화면은 web/ 에서 빌드한 riffle/ui 다(명세 2026-09-24-01). 웹과 같은 빌드를 파일로 연다.
+    static_file = UI_ENTRY
     window = webview.create_window(
         "Riffle",
         str(static_file.resolve()) + "#desktop",
@@ -665,8 +655,7 @@ def run(debug: bool = False, new_ui: bool = False) -> None:
     )
     api._bind_window(window)
     window.events.closed += api._close
-    if new_ui:
-        window.events.loaded += lambda: _bind_file_drop(window)
+    window.events.loaded += lambda: _bind_file_drop(window)
     icon = Path(__file__).parents[1] / "assets" / "icon.ico"
     webview.start(
         debug=debug,

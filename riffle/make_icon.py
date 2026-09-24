@@ -61,7 +61,8 @@ def build_pwa_icons(output_dir: Path) -> None:
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
     build_icon(root / "assets" / "icon.ico")
-    build_pwa_icons(root / "riffle" / "static" / "icons")
+    # 웹 앱 아이콘은 화면 소스에 둔다 — `web` 에서 `npm run build` 하면 riffle/ui/icons 로 들어간다.
+    build_pwa_icons(root / "web" / "public" / "icons")
 
 
 if __name__ == "__main__":

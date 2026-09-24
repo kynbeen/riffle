@@ -143,6 +143,34 @@ button, input { font: inherit; color: inherit; }
 .thumb img { width: 100%; height: auto; border-radius: 4px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); background: #fff; }
 .thumb-empty { width: 100%; aspect-ratio: 4 / 3; border-radius: 4px; background: var(--bg-hover); }
 
+/* 문서 합치기 */
+.merge-head, .result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.result-head { margin-top: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+.doc { display: grid; gap: 8px; padding: 12px 16px; border-radius: 16px; background: var(--bg-raised); }
+.doc-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.doc-name { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+.range { display: flex; align-items: center; gap: 8px; }
+.range input {
+  width: 180px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--bg);
+}
+.range input:focus { border-color: var(--accent); outline: none; }
+.merge-strip .tile { flex: 0 0 104px; display: grid; gap: 4px; justify-items: center; }
+.tile-face {
+  width: 100%; padding: 0; border: 1.5px solid transparent; border-radius: 6px; background: #fff; cursor: pointer;
+  overflow: hidden; line-height: 0; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.tile-face img { width: 100%; height: auto; }
+.tile.off .tile-face { opacity: 0.32; filter: grayscale(1); }
+.tile:not(.off) .tile-face:hover { border-color: var(--accent); }
+.tile[draggable='true'] { cursor: grab; }
+.tile-label { white-space: nowrap; }
+.tile-move { display: flex; gap: 4px; }
+.mini {
+  border: 0; border-radius: 6px; width: 24px; height: 20px; padding: 0; cursor: pointer;
+  background: var(--bg-hover); color: var(--text); line-height: 1;
+}
+.mini:disabled { opacity: 0.3; cursor: default; }
+
 .all summary { cursor: pointer; color: var(--text-2); padding: 4px 0; }
 .all summary:hover { color: var(--text); }
 .all-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 360px; overflow: auto; border-top: 1px solid var(--line); }

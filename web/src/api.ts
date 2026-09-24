@@ -1,6 +1,7 @@
 // 서버와 말하는 층. 데스크톱 창(pywebview 의 Python 호출)과 웹(HTTP)의 차이는 **여기서만** 갈린다
 // (명세 2026-09-24-01 「제약」). 화면은 `Backend` 하나만 안다.
 
+import type { Doc, Ref } from './merging'
 import type { Review } from './reasons'
 
 export interface Held {
@@ -58,7 +59,13 @@ export interface Backend {
   // 데스크톱은 파일 고르기 창을 띄워 경로를 받는다. 웹은 화면이 <input type=file> 로 고른다.
   pickFiles?(): Promise<Held[]>
   startHandwriting(source: Held, target: Held, progress?: (share: number) => void): Promise<void>
-  startMerge(pdfs: Held[], progress?: (share: number) => void): Promise<void>
+  // 합칠 PDF 를 올린다(더 놓아도 같은 입구). 지금까지 올린 문서 전부를 돌려준다.
+  startMerge(pdfs: Held[], progress?: (share: number) => void): Promise<Doc[]>
+  removeDocument(id: string): Promise<void>
+  pageImage(id: string, page: number, kind: 'thumbnail' | 'preview'): Promise<string>
+  // `1-3, 5, 8-` 같은 범위 글 → 쪽 번호(0부터). 규칙은 서버 한 곳(riffle/ranges.py)에만 있다.
+  parseRange(text: string, pageCount: number): Promise<number[]>
+  saveMerge(order: Ref[], name: string): Promise<Saved>
   handwritingStatus(): Promise<HandwritingStatus>
   retryHandwriting(): Promise<void>
   // 새 쪽(targetIndex)에 옛 쪽(sourceIndex)의 손필기를 얹어 본다. 한쪽이 없으면 -1.
@@ -111,7 +118,19 @@ function desktop(): Backend {
       await call('set_handwriting_source_path', source.path)
       await call('set_handwriting_target_path', target.path)
     },
-    async startMerge(pdfs) { await call('add_paths', pdfs.map((pdf) => pdf.path)) },
+    async startMerge(pdfs) {
+      const reply = await call('add_paths', pdfs.map((pdf) => pdf.path))
+      return reply.sources as Doc[]
+    },
+    async removeDocument(id) { await call('remove_document', id) },
+    async pageImage(id, page, kind) { return (await call('page_image', id, page, kind)).image as string },
+    async parseRange(text, pageCount) { return (await call('parse_range', text, pageCount)).indices as number[] },
+    async saveMerge(order, name) {
+      const reply = await call('save_result', order, name)
+      if (reply.cancelled) return { saved: false }
+      const result = reply.result as { path: string; warnings?: string[] }
+      return { saved: true, path: result.path, name: result.path.split(/[\\/]/).pop(), warnings: result.warnings }
+    },
     async handwritingStatus() { return (await call('handwriting_status')) as unknown as HandwritingStatus },
     async retryHandwriting() { await call('retry_handwriting_analysis') },
     async preview(targetIndex, sourceIndex) {
@@ -165,6 +184,29 @@ function upload(url: string, form: FormData, progress?: (share: number) => void)
   })
 }
 
+// 결과 파일을 만들어 곧바로 내려받는다(웹). 서버가 거절하면 그 사유를 그대로 올린다.
+async function download(url: string, body: unknown, fallback: string): Promise<Saved> {
+  const response = await fetch(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    let message = `저장하지 못했습니다(${response.status}).`
+    try { message = (await response.json()).error || message } catch { /* 본문이 JSON 이 아니다 */ }
+    throw new Error(message)
+  }
+  const fileName = downloadName(response.headers.get('Content-Disposition'), fallback)
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(await response.blob())
+  link.download = fileName
+  document.body.append(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(link.href), 60_000)
+  let warnings: string[] = []
+  try { warnings = JSON.parse(decodeURIComponent(response.headers.get('X-Riffle-Warnings') || '[]')) } catch { /* 없으면 없는 대로 */ }
+  return { saved: true, name: fileName, warnings }
+}
+
 function web(): Backend {
   return {
     runtime: 'web',
@@ -182,7 +224,21 @@ function web(): Backend {
     async startMerge(pdfs, progress) {
       const form = new FormData()
       pdfs.forEach((pdf) => form.append('files', pdf.file!, pdf.name))
-      await upload('/api/documents', form, progress)
+      return (await upload('/api/documents', form, progress)).sources as Doc[]
+    },
+    async removeDocument(id) { await json(`/api/documents/${encodeURIComponent(id)}`, { method: 'DELETE' }) },
+    async pageImage(id, page, kind) {
+      return (await json(`/api/documents/${encodeURIComponent(id)}/pages/${page}?kind=${kind}`)).image as string
+    },
+    async parseRange(text, pageCount) {
+      const reply = await json('/api/ranges', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: text, page_count: pageCount }),
+      })
+      return reply.indices as number[]
+    },
+    async saveMerge(order, name) {
+      return download('/api/documents/export', { order, suggested_name: name }, name)
     },
     async handwritingStatus() { return (await json('/api/handwriting/status')) as unknown as HandwritingStatus },
     async retryHandwriting() { await json('/api/handwriting/retry', { method: 'POST' }) },
@@ -191,27 +247,8 @@ function web(): Backend {
       return (await json(`/api/handwriting/preview?${query}`)) as unknown as Preview
     },
     async saveHandwriting(name, plan, allowUnconfirmed) {
-      const response = await fetch('/api/handwriting/export', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ suggested_name: name, page_plan: plan, allow_unconfirmed: allowUnconfirmed }),
-      })
-      if (!response.ok) {
-        let message = `저장하지 못했습니다(${response.status}).`
-        try { message = (await response.json()).error || message } catch { /* 본문이 JSON 이 아니다 */ }
-        throw new Error(message)
-      }
-      const fileName = downloadName(response.headers.get('Content-Disposition'), name)
-      const link = document.createElement('a')
-      link.href = URL.createObjectURL(await response.blob())
-      link.download = fileName
-      document.body.append(link)
-      link.click()
-      link.remove()
-      setTimeout(() => URL.revokeObjectURL(link.href), 60_000)
-      let warnings: string[] = []
-      try { warnings = JSON.parse(decodeURIComponent(response.headers.get('X-Riffle-Warnings') || '[]')) } catch { /* 없으면 없는 대로 */ }
-      return { saved: true, name: fileName, warnings }
+      return download('/api/handwriting/export',
+        { suggested_name: name, page_plan: plan, allow_unconfirmed: allowUnconfirmed }, name)
     },
     async reset() {
       await json('/api/handwriting/reset', { method: 'POST' })

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { backend, type Held } from './api'
 import Handwriting from './Handwriting'
+import Merge from './Merge'
+import type { Doc } from './merging'
 import { decide } from './classify'
 
 // 첫 화면은 놓는 곳 하나다. 놓은 파일로 할 일을 정하고(classify.ts), 곧바로 시작한다(명세 2026-09-24-01).
@@ -8,7 +10,7 @@ import { decide } from './classify'
 type Screen =
   | { kind: 'drop' }
   | { kind: 'handwriting'; source: string; target: string }
-  | { kind: 'merge'; names: string[] }
+  | { kind: 'merge'; docs: Doc[] }
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>({ kind: 'drop' })
@@ -25,7 +27,7 @@ export default function App() {
       <main className="stage">
         {screen.kind === 'drop' && <DropScreen onStart={setScreen} />}
         {screen.kind === 'handwriting' && <Handwriting source={screen.source} target={screen.target} />}
-        {screen.kind === 'merge' && <MergeScreen names={screen.names} />}
+        {screen.kind === 'merge' && <Merge initial={screen.docs} />}
       </main>
     </div>
   )
@@ -60,8 +62,8 @@ function DropScreen({ onStart }: { onStart: (screen: Screen) => void }) {
         await backend.startHandwriting(decision.source, decision.target, progress)
         onStart({ kind: 'handwriting', source: decision.source.name, target: decision.target.name })
       } else {
-        await backend.startMerge(decision.pdfs, progress)
-        onStart({ kind: 'merge', names: decision.pdfs.map((pdf) => pdf.name) })
+        const docs = await backend.startMerge(decision.pdfs, progress)
+        onStart({ kind: 'merge', docs })
       }
     } catch (error) {
       setBusy(null)
@@ -135,16 +137,6 @@ function DropScreen({ onStart }: { onStart: (screen: Screen) => void }) {
           void accept(files.map((file) => ({ name: file.name, file })))
         }}
       />
-    </section>
-  )
-}
-
-function MergeScreen({ names }: { names: string[] }) {
-  return (
-    <section className="panel">
-      <div className="t-title">문서 합치기 · {names.length}개 문서</div>
-      <div className="files t-body">{names.map((name) => <b key={name}>{name}</b>)}</div>
-      <div className="note t-body">쪽을 고르고 순서를 바꾸는 화면은 아직 만드는 중입니다. 지금은 기존 화면에서 합쳐 주세요.</div>
     </section>
   )
 }

@@ -10,6 +10,6 @@ if (-not (Test-Path -LiteralPath $Python)) {
 
 & $Python -m pip install --upgrade pip
 & $Python -m pip install -r (Join-Path $Root "requirements.txt")
-& $Python -m noteditor.make_icon
+& $Python -m riffle.make_icon
 
 Write-Host "개발 환경 준비 완료. 원터치 사용자 설치는 .\install.ps1 을 실행하세요." -ForegroundColor Green

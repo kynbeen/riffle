@@ -1,10 +1,10 @@
-﻿# NotEditor 원터치 설치 스크립트
+﻿# Riffle 원터치 설치 스크립트
 #
 # GitHub 릴리스에서 최신 설치 파일을 내려받아 그대로 실행한다. 하는 일은 이 세 가지가
 # 전부이고, 그 밖에 아무것도 보내거나 바꾸지 않는다.
 #
 #   1. 최신 릴리스 정보 조회 (api.github.com)
-#   2. NotEditor-Setup-<버전>.exe 내려받기
+#   2. Riffle-Setup-<버전>.exe 내려받기
 #   3. 내려받은 설치 파일 실행
 #
 # 사용법:
@@ -18,7 +18,7 @@
 param(
     [switch]$Silent,
     [switch]$Wizard,
-    [string]$Repository = "kynbeen/NotEditor"
+    [string]$Repository = "kynbeen/Riffle"
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,7 +40,7 @@ function Write-Step {
 }
 
 Write-Host ""
-Write-Host "  NotEditor 설치" -ForegroundColor White
+Write-Host "  Riffle 설치" -ForegroundColor White
 Write-Host "  ----------------------------------------" -ForegroundColor DarkGray
 
 Write-Step "[1/3] 최신 버전을 확인하는 중..."
@@ -48,14 +48,14 @@ $ReleaseUrl = "https://api.github.com/repos/$Repository/releases/latest"
 try {
     $Release = Invoke-RestMethod -Uri $ReleaseUrl -Headers @{
         "Accept"     = "application/vnd.github+json"
-        "User-Agent" = "NotEditor-Installer"
+        "User-Agent" = "Riffle-Installer"
     }
 } catch {
     throw "최신 버전 정보를 가져오지 못했습니다. 인터넷 연결을 확인한 뒤 다시 실행하세요. ($($_.Exception.Message))"
 }
 
 $Version = $Release.tag_name
-$Asset = $Release.assets | Where-Object { $_.name -like "NotEditor-Setup-*.exe" } | Select-Object -First 1
+$Asset = $Release.assets | Where-Object { $_.name -like "Riffle-Setup-*.exe" } | Select-Object -First 1
 if (-not $Asset) {
     throw "이 릴리스($Version)에는 Windows 설치 파일이 없습니다. https://github.com/$Repository/releases 에서 직접 확인하세요."
 }
@@ -106,5 +106,5 @@ Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "  설치가 끝났습니다. ($Version)" -ForegroundColor Green
-Write-Host "  시작 메뉴 또는 바탕화면에서 'NotEditor' 를 실행하세요." -ForegroundColor Green
+Write-Host "  시작 메뉴 또는 바탕화면에서 'Riffle' 를 실행하세요." -ForegroundColor Green
 Write-Host ""

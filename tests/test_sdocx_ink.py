@@ -6,7 +6,7 @@ from io import BytesIO
 
 from PIL import Image
 
-from noteditor.sdocx_ink import read_ink_strokes, render_ink_png
+from riffle.sdocx_ink import read_ink_strokes, render_ink_png
 from tests.test_sdocx_page import make_page
 
 

@@ -163,7 +163,7 @@ async function downloadWebResult(endpoint, payload) {
   const blob = await response.blob();
   const disposition = response.headers.get("Content-Disposition") || "";
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
-  const filename = encoded ? decodeURIComponent(encoded) : "NotEditor-result";
+  const filename = encoded ? decodeURIComponent(encoded) : "Riffle-result";
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -172,13 +172,13 @@ async function downloadWebResult(endpoint, payload) {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
-  const warnings = JSON.parse(decodeURIComponent(response.headers.get("X-NotEditor-Warnings") || "%5B%5D"));
+  const warnings = JSON.parse(decodeURIComponent(response.headers.get("X-Riffle-Warnings") || "%5B%5D"));
   return {
     ok: true,
     cancelled: false,
     result: {
       path: `다운로드 · ${filename}`,
-      page_count: Number(response.headers.get("X-NotEditor-Page-Count") || 0),
+      page_count: Number(response.headers.get("X-Riffle-Page-Count") || 0),
       warnings,
     },
   };
@@ -212,7 +212,7 @@ function requireApi() {
   const bridge = window.pywebview?.api;
   if (bridge) return bridge;
   if (state.runtime === "web") return webApi;
-  throw new Error("앱 내부 연결이 준비되지 않았습니다. NotEditor를 다시 실행해 주세요.");
+  throw new Error("앱 내부 연결이 준비되지 않았습니다. Riffle을 다시 실행해 주세요.");
 }
 
 async function callApi(method, ...args) {
@@ -247,7 +247,7 @@ function setBridgeState(ready, failed = false) {
   refs.emptyAdd.textContent = ready ? "파일 선택" : (failed ? "앱으로 다시 실행하세요" : "준비 중…");
   refs.sourceHelp.textContent = ready
     ? (state.runtime === "web" ? "PDF는 이 브라우저 세션에서만 임시 처리됩니다." : "여러 파일을 한 번에 선택할 수 있습니다.")
-    : (failed ? "NotEditor 연결을 확인할 수 없습니다." : "앱 내부 연결을 준비하는 중입니다.");
+    : (failed ? "Riffle 연결을 확인할 수 없습니다." : "앱 내부 연결을 준비하는 중입니다.");
   refs.connectionError.hidden = !failed;
   renderSummary();
 }
@@ -1556,7 +1556,7 @@ setTimeout(() => {
 if (window.location.protocol.startsWith("http") && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch((error) => {
-      console.warn("NotEditor PWA service worker registration failed", error);
+      console.warn("Riffle PWA service worker registration failed", error);
     });
   });
 }

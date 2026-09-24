@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "noteditor-shell-v13";
+const CACHE_NAME = "riffle-shell-v13";
 const APP_SHELL = [
   "/index.html",
   "/app.css",

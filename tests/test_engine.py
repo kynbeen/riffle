@@ -15,8 +15,8 @@ import pikepdf
 import pymupdf
 from PIL import Image
 
-import noteditor.engine as engine_module
-from noteditor.engine import ComposerSession, EncryptedPdfError, PdfComposerError
+import riffle.engine as engine_module
+from riffle.engine import ComposerSession, EncryptedPdfError, PdfComposerError
 
 
 def make_source(path: Path, labels: list[str], *, form: bool = False) -> None:
@@ -104,7 +104,7 @@ class ComposerEngineTests(unittest.TestCase):
         source_path = self.root / "deterministic.pdf"
         make_source(source_path, ["ONE", "TWO"])
         script = (
-            "import hashlib,sys; from noteditor.engine import ComposerSession; "
+            "import hashlib,sys; from riffle.engine import ComposerSession; "
             "s=ComposerSession(); d=s.add_files([sys.argv[1]])[0]; "
             "s.build_pdf([{'document_id':d['id'],'page_index':0},"
             "{'document_id':d['id'],'page_index':1}],sys.argv[2]); s.close(); "

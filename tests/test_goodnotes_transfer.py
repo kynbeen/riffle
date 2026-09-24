@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pymupdf
 
-from noteditor.goodnotes_archive import (
+from riffle.goodnotes_archive import (
     background_pdf,
     entity_of,
     new_page_ids,
@@ -21,24 +21,24 @@ from noteditor.goodnotes_archive import (
     read_document,
     safe_members,
 )
-from noteditor.goodnotes_ink import read_goodnotes_strokes, render_goodnotes_ink
-from noteditor.goodnotes_proto import (
+from riffle.goodnotes_ink import read_goodnotes_strokes, render_goodnotes_ink
+from riffle.goodnotes_proto import (
     GoodnotesTransferError,
     apple_lz4_decompress,
     field_values,
     split_delimited,
 )
-from noteditor.goodnotes_transfer import (
+from riffle.goodnotes_transfer import (
     inspect_goodnotes_transfer,
     preview_goodnotes_transfer,
     transfer_goodnotes_handwriting,
 )
-from noteditor.handwriting_transfer import (
+from riffle.handwriting_transfer import (
     SUPPORTED_SUFFIXES,
     output_suffix,
     with_output_suffix,
 )
-from noteditor.page_plan import PagePlan, PlanSlot
+from riffle.page_plan import PagePlan, PlanSlot
 
 FIXTURE = Path(__file__).parent / "fixtures" / "goodnotes" / "gn-mac-mixed-pens.goodnotes"
 
@@ -181,7 +181,7 @@ class GoodnotesTransferTest(unittest.TestCase):
             return archive.read(member)
 
     def test_existing_outline_rejects_without_replacing_output(self):
-        from noteditor.goodnotes_proto import encode_field, encode_varint
+        from riffle.goodnotes_proto import encode_field, encode_varint
 
         source = self.directory / "with-outline.goodnotes"
         with zipfile.ZipFile(FIXTURE) as archive, zipfile.ZipFile(source, "w") as result:

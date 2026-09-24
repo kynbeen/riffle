@@ -6,10 +6,10 @@ __pycache__/
 build/
 dist/
 *.spec
-!NotEditor.spec
+!Riffle.spec
 release/
 tmp/
 output/
 assets/icon.ico
-noteditor/_version.py
+riffle/_version.py
 

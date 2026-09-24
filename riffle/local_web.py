@@ -1,4 +1,4 @@
-"""Windows launcher for the loopback-only NotEditor web application."""
+"""Windows launcher for the loopback-only Riffle web application."""
 from __future__ import annotations
 
 import argparse
@@ -21,7 +21,7 @@ from .app import configure_windows_app_identity
 LOCAL_WEB_HOST = "127.0.0.1"
 DEFAULT_LOCAL_WEB_PORT = 8765
 LOCAL_WEB_INSTANCE = "local-web"
-LOCAL_WEB_APP_USER_MODEL_ID = "NotEditor.LocalWeb"
+LOCAL_WEB_APP_USER_MODEL_ID = "Riffle.LocalWeb"
 STARTUP_TIMEOUT_SECONDS = 15.0
 
 
@@ -34,7 +34,7 @@ def local_web_url(port: int = DEFAULT_LOCAL_WEB_PORT) -> str:
 
 
 def user_data_root() -> Path:
-    return Path(os.environ.get("LOCALAPPDATA", Path.home())) / "NotEditor"
+    return Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Riffle"
 
 
 def configure_local_web_logging() -> Path:
@@ -48,7 +48,7 @@ def configure_local_web_logging() -> Path:
         encoding="utf-8",
         force=True,
     )
-    logging.getLogger("noteditor.local_web").info(
+    logging.getLogger("riffle.local_web").info(
         "Local web launcher starting (version %s)", __version__
     )
     return log_path
@@ -119,7 +119,7 @@ def launch_app_browser(url: str) -> subprocess.Popen:
         )
     profile = user_data_root() / "LocalWebProfile"
     profile.mkdir(parents=True, exist_ok=True)
-    logging.getLogger("noteditor.local_web").info(
+    logging.getLogger("riffle.local_web").info(
         "Opening local web app with %s", browser
     )
     return subprocess.Popen(browser_command(browser, url, profile))
@@ -141,7 +141,7 @@ def probe_server(
     return payload if isinstance(payload, dict) else None
 
 
-def is_local_noteditor(payload: dict | None) -> bool:
+def is_local_riffle(payload: dict | None) -> bool:
     return bool(
         payload
         and payload.get("ok") is True
@@ -162,7 +162,7 @@ def port_is_available(port: int) -> bool:
 def wait_until_ready(port: int, server, timeout: float = STARTUP_TIMEOUT_SECONDS) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if is_local_noteditor(probe_server(port)):
+        if is_local_riffle(probe_server(port)):
             return
         if getattr(server, "should_exit", False):
             break
@@ -174,8 +174,8 @@ def wait_until_ready(port: int, server, timeout: float = STARTUP_TIMEOUT_SECONDS
 
 def _run_owned_server(port: int) -> None:
     # The marker lets a second shortcut distinguish this server from an unrelated
-    # service or a manually started NotEditor development server on the same port.
-    os.environ["NOTEDITOR_INSTANCE"] = LOCAL_WEB_INSTANCE
+    # service or a manually started Riffle development server on the same port.
+    os.environ["RIFFLE_INSTANCE"] = LOCAL_WEB_INSTANCE
 
     import uvicorn
 
@@ -197,12 +197,12 @@ def _run_owned_server(port: int) -> None:
             wait_until_ready(port, server)
             process = launch_app_browser(local_web_url(port))
             return_code = process.wait()
-            logging.getLogger("noteditor.local_web").info(
+            logging.getLogger("riffle.local_web").info(
                 "App-mode browser exited with code %s", return_code
             )
         except BaseException as exc:  # propagate after the server has stopped
             errors.append(exc)
-            logging.getLogger("noteditor.local_web").exception(
+            logging.getLogger("riffle.local_web").exception(
                 "Failed while coordinating the local browser"
             )
         finally:
@@ -210,7 +210,7 @@ def _run_owned_server(port: int) -> None:
 
     watcher = threading.Thread(
         target=open_and_watch_browser,
-        name="noteditor-local-browser",
+        name="riffle-local-browser",
         daemon=True,
     )
     watcher.start()
@@ -224,7 +224,7 @@ def run_local_web(port: int = DEFAULT_LOCAL_WEB_PORT) -> str:
     if not 1 <= port <= 65535:
         raise LocalWebLauncherError(f"올바르지 않은 포트입니다: {port}")
     current = probe_server(port)
-    if is_local_noteditor(current):
+    if is_local_riffle(current):
         # This process does not own the existing server, so it only opens another
         # window and exits. It must never stop somebody else's working session.
         launch_app_browser(local_web_url(port))
@@ -243,7 +243,7 @@ def _show_startup_error(message: str, log_path: Path) -> None:
         from tkinter import messagebox
 
         messagebox.showerror(
-            "NotEditor 로컬 웹",
+            "Riffle 로컬 웹",
             "로컬 웹을 시작하지 못했습니다.\n\n"
             f"오류: {message}\n\n진단 기록: {log_path}",
         )
@@ -252,11 +252,11 @@ def _show_startup_error(message: str, log_path: Path) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="NotEditor를 로컬 웹 앱으로 실행합니다.")
+    parser = argparse.ArgumentParser(description="Riffle을 로컬 웹 앱으로 실행합니다.")
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.environ.get("NOTEDITOR_LOCAL_PORT", DEFAULT_LOCAL_WEB_PORT)),
+        default=int(os.environ.get("RIFFLE_LOCAL_PORT", DEFAULT_LOCAL_WEB_PORT)),
         help="루프백 웹 서버 포트",
     )
     args = parser.parse_args()
@@ -265,7 +265,7 @@ def main() -> None:
     try:
         run_local_web(args.port)
     except Exception as exc:
-        logging.getLogger("noteditor.local_web").error(
+        logging.getLogger("riffle.local_web").error(
             "Local web launcher failed\n%s", traceback.format_exc()
         )
         _show_startup_error(str(exc), log_path)

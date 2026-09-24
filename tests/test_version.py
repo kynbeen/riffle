@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from noteditor import stamp_version, version
+from riffle import stamp_version, version
 
 
 class NormalizeTagTests(unittest.TestCase):
@@ -43,18 +43,18 @@ class DescribeTests(unittest.TestCase):
 
 class ResolveVersionTests(unittest.TestCase):
     def test_environment_override_wins(self):
-        with patch.dict("os.environ", {"NOTEDITOR_VERSION": "9.9.9"}):
+        with patch.dict("os.environ", {"RIFFLE_VERSION": "9.9.9"}):
             self.assertEqual(version.resolve_version(), "9.9.9")
 
     def test_stamped_file_is_used_before_git(self):
-        with patch.dict("os.environ", {"NOTEDITOR_VERSION": ""}), \
+        with patch.dict("os.environ", {"RIFFLE_VERSION": ""}), \
                 patch.object(version, "_stamped_version", return_value="0.5.0"), \
                 patch.object(version, "describe", return_value="v0.4.0") as described:
             self.assertEqual(version.resolve_version(), "0.5.0")
         described.assert_not_called()
 
     def test_falls_back_to_git_then_to_unknown(self):
-        with patch.dict("os.environ", {"NOTEDITOR_VERSION": ""}), \
+        with patch.dict("os.environ", {"RIFFLE_VERSION": ""}), \
                 patch.object(version, "_stamped_version", return_value=None):
             with patch.object(version, "describe", return_value="v0.5.0-1-gabc1234"):
                 self.assertEqual(version.resolve_version(), "0.5.0+1.gabc1234")
@@ -64,15 +64,15 @@ class ResolveVersionTests(unittest.TestCase):
 
     def test_deploy_platform_commit_is_better_than_unknown(self):
         with patch.dict("os.environ",
-                        {"NOTEDITOR_VERSION": "", "RENDER_GIT_COMMIT": "bf90fcf1234567"}), \
+                        {"RIFFLE_VERSION": "", "RENDER_GIT_COMMIT": "bf90fcf1234567"}), \
                 patch.object(version, "_stamped_version", return_value=None), \
                 patch.object(version, "describe", return_value=None):
             self.assertEqual(version.resolve_version(), "0.0.0+bf90fcf")
 
     def test_the_running_package_reports_a_usable_version(self):
-        import noteditor
+        import riffle
 
-        self.assertRegex(noteditor.__version__, r"^\d+(\.\d+)*(\+.+)?$")
+        self.assertRegex(riffle.__version__, r"^\d+(\.\d+)*(\+.+)?$")
 
 
 class StampVersionTests(unittest.TestCase):

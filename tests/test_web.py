@@ -14,11 +14,11 @@ from urllib.parse import unquote
 import pymupdf
 from fastapi.testclient import TestClient
 
-from noteditor.goodnotes_archive import background_pdf, read_document, safe_members
-from noteditor.notewise_ink import read_notewise_strokes
-from noteditor.notewise_transfer import _page_ids
-from noteditor.page_match import MatchResult, PagePair
-from noteditor.web import (
+from riffle.goodnotes_archive import background_pdf, read_document, safe_members
+from riffle.notewise_ink import read_notewise_strokes
+from riffle.notewise_transfer import _page_ids
+from riffle.page_match import MatchResult, PagePair
+from riffle.web import (
     SESSION_COOKIE,
     HandwritingExportRequest,
     _export_handwriting,
@@ -71,7 +71,7 @@ class WebAppTests(unittest.TestCase):
         self.assertTrue(inspect.iscoroutinefunction(health))
         self.assertTrue(inspect.iscoroutinefunction(health_head))
 
-    def test_serves_noteditor_ui_and_health(self):
+    def test_serves_riffle_ui_and_health(self):
         health = self.client.get("/api/health")
         self.assertEqual(health.status_code, 200)
         self.assertEqual(health.json()["runtime"], "web")
@@ -79,7 +79,7 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(self.client.head("/api/health").status_code, 200)
         page = self.client.get("/")
         self.assertEqual(page.status_code, 200)
-        self.assertIn("<title>NotEditor</title>", page.text)
+        self.assertIn("<title>Riffle</title>", page.text)
 
         manifest = self.client.get("/manifest.webmanifest")
         self.assertEqual(manifest.status_code, 200)
@@ -107,7 +107,7 @@ class WebAppTests(unittest.TestCase):
         )
         self.assertEqual(exported.status_code, 200, exported.text)
         self.assertTrue(exported.content.startswith(b"%PDF"))
-        self.assertEqual(exported.headers["X-NotEditor-Page-Count"], "1")
+        self.assertEqual(exported.headers["X-Riffle-Page-Count"], "1")
 
     def test_upload_preview_and_export_handwriting(self):
         source_sdocx = self.root / "annotated.sdocx"
@@ -140,8 +140,8 @@ class WebAppTests(unittest.TestCase):
         self.assertTrue(exported.content.startswith(b"PK"))
 
     def test_sdocx_ratio_change_downloads_target_sized_output(self):
-        from noteditor.sdocx_note import read_page_order
-        from noteditor.sdocx_page import read_page
+        from riffle.sdocx_note import read_page_order
+        from riffle.sdocx_page import read_page
         from tests.test_sdocx_ink import make_stroke_layers
         from tests.test_sdocx_rebuild import UUIDS, make_rebuild_source
 
@@ -187,8 +187,8 @@ class WebAppTests(unittest.TestCase):
 
     def test_sdocx_exclusion_drops_only_the_excluded_row(self):
         """제외한 행만 빠지고, 남은 쪽은 그대로 대상 PDF 비율을 따른다."""
-        from noteditor.sdocx_note import read_page_order
-        from noteditor.sdocx_page import read_page
+        from riffle.sdocx_note import read_page_order
+        from riffle.sdocx_page import read_page
         from tests.test_sdocx_ink import make_stroke_layers
         from tests.test_sdocx_rebuild import UUIDS, make_rebuild_source
 
@@ -411,7 +411,7 @@ class WebAppTests(unittest.TestCase):
             {"source_index": 1, "target_index": 0, "confirmed": False},
         ]
         output = self.root / "planned.sdocx"
-        with patch("noteditor.web.transfer_handwriting", return_value={}) as transfer:
+        with patch("riffle.web.transfer_handwriting", return_value={}) as transfer:
             with self.assertRaisesRegex(ValueError, "확인하지 않은"):
                 _export_handwriting(
                     api,
@@ -450,7 +450,7 @@ class WebAppTests(unittest.TestCase):
             progress("preview")
             return inspection
 
-        with patch("noteditor.app.inspect_transfer", side_effect=inspect):
+        with patch("riffle.app.inspect_transfer", side_effect=inspect):
             uploaded_source = self.client.post(
                 "/api/handwriting/source",
                 files={"file": (source.name, source.read_bytes(), "application/zip")},
@@ -736,7 +736,7 @@ class WorkspaceIsolationTests(unittest.TestCase):
                 self.assertTrue(remaining[0].endswith(name), remaining)
 
     def test_workspace_count_is_capped(self):
-        with patch("noteditor.web.MAX_SESSIONS", 3):
+        with patch("riffle.web.MAX_SESSIONS", 3):
             clients = []
             for _ in range(6):
                 client = TestClient(app)
@@ -748,7 +748,7 @@ class WorkspaceIsolationTests(unittest.TestCase):
         with TestClient(app) as browser:
             self._upload(browser)
             workspace = self._only_workspace()
-            with patch("noteditor.web.SESSION_TTL_SECONDS", -1):
+            with patch("riffle.web.SESSION_TTL_SECONDS", -1):
                 store.expire_idle()
             self.assertEqual(len(store._sessions), 0)
             self.assertFalse(workspace.exists())

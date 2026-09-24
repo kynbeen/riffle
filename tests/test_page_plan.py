@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from noteditor.page_match import MatchResult, PagePair
-from noteditor.page_plan import PagePlan, PagePlanError
+from riffle.page_match import MatchResult, PagePair
+from riffle.page_plan import PagePlan, PagePlanError
 
 
 def automatic_match() -> MatchResult:

@@ -12,19 +12,19 @@ from zipfile import ZipFile
 import pymupdf
 from PIL import Image
 
-from noteditor.app import ComposerApi
-from noteditor.goodnotes_archive import background_pdf, read_document, safe_members
-from noteditor.handwriting_transfer import inspect_transfer, preview_transfer, transfer_handwriting
-from noteditor.page_plan import PagePlan, PlanSlot
+from riffle.app import ComposerApi
+from riffle.goodnotes_archive import background_pdf, read_document, safe_members
+from riffle.handwriting_transfer import inspect_transfer, preview_transfer, transfer_handwriting
+from riffle.page_plan import PagePlan, PlanSlot
 from tests.test_goodnotes_transfer import FIXTURE
 from tests.test_notewise_transfer import _make_notewise
 from tests.test_page_match import make_document, SEEDS
 from tests.test_sdocx_ink import make_stroke_layers
 from tests.test_sdocx_rebuild import make_rebuild_source, UUIDS
 from tests.test_sdocx_page import make_page
-from noteditor.sdocx_note import PageOrder, PageOrderEntry, read_page_order
-from noteditor.sdocx_page import page_hash
-from noteditor.sdocx_transfer import _rewrite_archive, preview_native_page, SdocxTransferError
+from riffle.sdocx_note import PageOrder, PageOrderEntry, read_page_order
+from riffle.sdocx_page import page_hash
+from riffle.sdocx_transfer import _rewrite_archive, preview_native_page, SdocxTransferError
 
 
 class PreservedSourcePageTests(unittest.TestCase):
@@ -114,8 +114,8 @@ class PreservedSourcePageTests(unittest.TestCase):
         self.assertTrue(base64.b64decode(response["after"].split(",", 1)[1]).startswith(b"\x89PNG"))
         from fastapi.testclient import TestClient
         from unittest.mock import patch
-        from noteditor.web import app
-        with patch("noteditor.web._api", return_value=api), TestClient(app) as client:
+        from riffle.web import app
+        with patch("riffle.web._api", return_value=api), TestClient(app) as client:
             web = client.get("/api/handwriting/preview?page_index=-1&source_index=2")
         self.assertEqual(web.status_code, 200, web.text)
         self.assertEqual(web.json()["after"], response["after"])
@@ -155,8 +155,8 @@ class PreservedSourcePageTests(unittest.TestCase):
         self.assertEqual(base64.b64decode(response["after"].split(",", 1)[1]), after)
         from fastapi.testclient import TestClient
         from unittest.mock import patch
-        from noteditor.web import app
-        with patch("noteditor.web._api", return_value=api), TestClient(app) as client:
+        from riffle.web import app
+        with patch("riffle.web._api", return_value=api), TestClient(app) as client:
             web = client.get("/api/handwriting/preview", params={"native_page_id": UUIDS[4]})
         self.assertEqual(web.json()["after"], response["after"])
         output = self.root / "native-result.sdocx"

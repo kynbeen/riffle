@@ -1,4 +1,4 @@
-"""Session-isolated HTTP adapter for running NotEditor in a web browser."""
+"""Session-isolated HTTP adapter for running Riffle in a web browser."""
 from __future__ import annotations
 
 import json
@@ -32,17 +32,17 @@ from .handwriting_transfer import (
 from .page_match import match_from_target_mapping
 from .page_plan import PagePlan
 
-SESSION_COOKIE = "noteditor_session"
+SESSION_COOKIE = "riffle_session"
 # Uptime pings arrive without a cookie, so giving them a session would mint a new
 # ComposerApi and temp dir every few minutes for nobody to use.
 SESSIONLESS_PATHS = frozenset({"/api/health"})
 # 첫 화면만 세션을 심는다. 브라우저는 이 문서와 함께 정적 자산을 병렬로 요청하는데, 그것들이
 # 저마다 세션을 만들면 접속 한 번에 빈 작업공간이 여러 개 생겨 TTL 동안 디스크에 남는다.
 SESSION_ENTRY_PATHS = frozenset({"/", "/index.html"})
-SESSION_TTL_SECONDS = int(os.environ.get("NOTEDITOR_SESSION_TTL", "7200"))
-MAX_UPLOAD_BYTES = int(os.environ.get("NOTEDITOR_MAX_UPLOAD_MB", "512")) * 1024 * 1024
-MAX_SESSIONS = int(os.environ.get("NOTEDITOR_MAX_SESSIONS", "200"))
-SWEEP_INTERVAL_SECONDS = int(os.environ.get("NOTEDITOR_SWEEP_INTERVAL", "60"))
+SESSION_TTL_SECONDS = int(os.environ.get("RIFFLE_SESSION_TTL", "7200"))
+MAX_UPLOAD_BYTES = int(os.environ.get("RIFFLE_MAX_UPLOAD_MB", "512")) * 1024 * 1024
+MAX_SESSIONS = int(os.environ.get("RIFFLE_MAX_SESSIONS", "200"))
+SWEEP_INTERVAL_SECONDS = int(os.environ.get("RIFFLE_SWEEP_INTERVAL", "60"))
 
 
 def needs_session(path: str) -> bool:
@@ -110,7 +110,7 @@ class SessionStore:
         for token, session in oldest[:overflow]:
             self._sessions.pop(token, None)
             session.close()
-        logging.getLogger("noteditor.web").warning(
+        logging.getLogger("riffle.web").warning(
             "세션 상한 %d에 도달해 오래된 작업공간 %d개를 정리했습니다.", MAX_SESSIONS, overflow
         )
 
@@ -146,7 +146,7 @@ class ClientErrorRequest(BaseModel):
 
 
 store = SessionStore()
-app = FastAPI(title="NotEditor", version=__version__, docs_url=None, redoc_url=None)
+app = FastAPI(title="Riffle", version=__version__, docs_url=None, redoc_url=None)
 
 
 @app.middleware("http")
@@ -157,7 +157,7 @@ async def attach_session(request: Request, call_next):
             store.expire_idle()
         return await call_next(request)
     token, session, created = store.acquire(request.cookies.get(SESSION_COOKIE))
-    request.state.noteditor = session
+    request.state.riffle = session
     response = await call_next(request)
     # 이 응답은 특정 사용자의 것이다. 중간 프록시나 브라우저가 이걸 저장해 두면 다음 사람에게
     # 남의 문서가, 심지어 Set-Cookie가 실린 응답이면 남의 세션 자체가 건네진다.
@@ -197,7 +197,7 @@ async def close_sessions() -> None:
 
 
 def _api(request: Request) -> ComposerApi:
-    return request.state.noteditor.api
+    return request.state.riffle.api
 
 
 def _json_result(payload: dict) -> JSONResponse:
@@ -274,7 +274,7 @@ async def health() -> dict:
         "ok": True,
         "version": __version__,
         "runtime": "web",
-        "instance": os.environ.get("NOTEDITOR_INSTANCE", "web"),
+        "instance": os.environ.get("RIFFLE_INSTANCE", "web"),
     }
 
 
@@ -285,7 +285,7 @@ async def health_head() -> Response:
 
 @app.post("/api/client-error")
 def client_error(payload: ClientErrorRequest) -> dict:
-    logging.getLogger("noteditor.web").error("UI error: %s", payload.message)
+    logging.getLogger("riffle.web").error("UI error: %s", payload.message)
     return {"ok": True}
 
 
@@ -349,8 +349,8 @@ async def export_documents(request: Request, payload: ExportRequest):
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
     headers = {
-        "X-NotEditor-Page-Count": str(result["page_count"]),
-        "X-NotEditor-Warnings": quote(json.dumps(result.get("warnings", []), ensure_ascii=False)),
+        "X-Riffle-Page-Count": str(result["page_count"]),
+        "X-Riffle-Warnings": quote(json.dumps(result.get("warnings", []), ensure_ascii=False)),
     }
     return FileResponse(
         output,
@@ -490,8 +490,8 @@ async def export_handwriting(request: Request, payload: HandwritingExportRequest
         media_type="application/octet-stream",
         filename=filename,
         headers={
-            "X-NotEditor-Page-Count": str(result.get("page_count", 0)),
-            "X-NotEditor-Warnings": quote(
+            "X-Riffle-Page-Count": str(result.get("page_count", 0)),
+            "X-Riffle-Warnings": quote(
                 json.dumps(result.get("warnings", []), ensure_ascii=False)
             ),
         },
@@ -507,8 +507,8 @@ def main() -> None:
     import uvicorn
 
     uvicorn.run(
-        "noteditor.web:app",
-        host=os.environ.get("NOTEDITOR_HOST", "0.0.0.0"),
+        "riffle.web:app",
+        host=os.environ.get("RIFFLE_HOST", "0.0.0.0"),
         port=int(os.environ.get("PORT", "8000")),
         proxy_headers=True,
     )

@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PIL import Image
 
-from noteditor.handwriting_transfer import inspect_transfer, preview_transfer
+from riffle.handwriting_transfer import inspect_transfer, preview_transfer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from make_ratio_check_set import embedded_pdf_bytes  # noqa: E402

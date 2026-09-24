@@ -7,19 +7,19 @@ if (-not (Test-Path -LiteralPath $Pyw)) {
     throw "먼저 setup.ps1을 실행하세요: $Pyw 없음"
 }
 # 코드와 함께 아이콘이 바뀔 수 있으므로 기존 파일이 있어도 매번 다시 만든다.
-& (Join-Path $Root "venv\Scripts\python.exe") -m noteditor.make_icon
+& (Join-Path $Root "venv\Scripts\python.exe") -m riffle.make_icon
 
 $shell = New-Object -ComObject WScript.Shell
 $definitions = @(
     @{
-        Name = "NotEditor.lnk"
-        Arguments = "-m noteditor"
+        Name = "Riffle.lnk"
+        Arguments = "-m riffle"
         Description = "PDF 문서 합치기와 필기 옮기기 데스크톱 앱"
     },
     @{
-        Name = "NotEditor 로컬 웹.lnk"
-        Arguments = "-m noteditor.local_web"
-        Description = "로컬 PC에서 실행되는 NotEditor 웹 앱"
+        Name = "Riffle 로컬 웹.lnk"
+        Arguments = "-m riffle.local_web"
+        Description = "로컬 PC에서 실행되는 Riffle 웹 앱"
     }
 )
 
@@ -41,4 +41,4 @@ foreach ($definition in $definitions) {
     }
 }
 
-Write-Host "설치 완료. 'NotEditor' 또는 'NotEditor 로컬 웹'으로 실행하세요." -ForegroundColor Green
+Write-Host "설치 완료. 'Riffle' 또는 'Riffle 로컬 웹'으로 실행하세요." -ForegroundColor Green

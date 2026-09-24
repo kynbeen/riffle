@@ -1,3 +1,3 @@
-from noteditor.__main__ import main
+from riffle.__main__ import main
 
 main()

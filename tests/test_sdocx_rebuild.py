@@ -8,12 +8,12 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 import pymupdf
 
-from noteditor.page_match import MatchResult, PagePair
-from noteditor.sdocx_end_tag import patch_end_tag, read_end_tag
-from noteditor.sdocx_note import PageOrder, PageOrderEntry, read_note, read_page_order
-from noteditor.sdocx_page import is_blank_page, page_hash, read_page
-from noteditor.sdocx_rebuild import SdocxRebuildError, rebuild_handwriting
-from noteditor.sdocx_transfer import parse_media_info
+from riffle.page_match import MatchResult, PagePair
+from riffle.sdocx_end_tag import patch_end_tag, read_end_tag
+from riffle.sdocx_note import PageOrder, PageOrderEntry, read_note, read_page_order
+from riffle.sdocx_page import is_blank_page, page_hash, read_page
+from riffle.sdocx_rebuild import SdocxRebuildError, rebuild_handwriting
+from riffle.sdocx_transfer import parse_media_info
 from tests.test_sdocx_note import make_note
 from tests.test_sdocx_ink import make_stroke_layers
 from tests.test_sdocx_page import make_page
@@ -94,7 +94,7 @@ class RebuildHandwritingTests(unittest.TestCase):
         self.folder.cleanup()
 
     def test_native_note_page_stays_between_its_original_neighbors(self):
-        from noteditor.sdocx_transfer import _rewrite_archive
+        from riffle.sdocx_transfer import _rewrite_archive
         order = read_page_order(self.payloads["pageIdInfo.dat"])
         entries = list(order.entries)
         native = entries.pop()
@@ -311,7 +311,7 @@ class RebuildHandwritingTests(unittest.TestCase):
         with ZipFile(output) as archive:
             embedded = archive.read("media/0@source.pdf")
             transformed = read_page(archive.read(f"{UUIDS[2]}.page"))
-            from noteditor.sdocx_ink import read_ink_strokes
+            from riffle.sdocx_ink import read_ink_strokes
 
             _width, _height, strokes = read_ink_strokes(
                 archive.read(f"{UUIDS[2]}.page")

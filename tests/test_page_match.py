@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pymupdf
 
-from noteditor.page_match import (
+from riffle.page_match import (
     PageMatchError,
     distance,
     fingerprints,

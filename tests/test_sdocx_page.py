@@ -3,7 +3,7 @@ from __future__ import annotations
 import struct
 import unittest
 
-from noteditor.sdocx_page import (
+from riffle.sdocx_page import (
     PAGE_FOOTER,
     SdocxPageError,
     is_blank_page,

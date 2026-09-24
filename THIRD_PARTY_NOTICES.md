@@ -4,11 +4,11 @@
 
 The document merge result list includes SortableJS 1.15.7 for mouse and touch
 reordering. Its unmodified MIT license is shipped at
-`noteditor/static/vendor/SORTABLE-LICENSE.txt`.
+`riffle/static/vendor/SORTABLE-LICENSE.txt`.
 
 ## Dietrich
 
-Parts of `noteditor/sdocx_ink.py` are adapted from Dietrich's Samsung
+Parts of `riffle/sdocx_ink.py` are adapted from Dietrich's Samsung
 Notes parser.
 
 MIT License
@@ -37,8 +37,8 @@ SOFTWARE.
 
 `tests/fixtures/goodnotes/gn-mac-mixed-pens.goodnotes` is redistributed
 unchanged from the inkterop project, where it is a controlled GoodNotes 6
-(Mac App Store) export used as a format fixture. NotEditor's Goodnotes
-support in `noteditor/goodnotes_*.py` is an independent implementation, but
+(Mac App Store) export used as a format fixture. Riffle's Goodnotes
+support in `riffle/goodnotes_*.py` is an independent implementation, but
 the container layout, page/event model and geometry-signature facts it
 relies on were established by inkterop's published reverse-engineering
 notes (`docs/formats/goodnotes.md`). Those notes in turn credit
@@ -74,5 +74,5 @@ The reading of a Goodnotes page's background reference (paper record field 4
 = attachment id, field 5 = page number inside that attachment) was
 cross-checked against
 [fakeminjun7321/goodnotes-pdf-engine](https://github.com/fakeminjun7321/goodnotes-pdf-engine)
-(MIT), which is not a dependency of NotEditor.
+(MIT), which is not a dependency of Riffle.
 

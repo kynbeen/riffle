@@ -3,7 +3,7 @@ from __future__ import annotations
 import struct
 import unittest
 
-from noteditor.sdocx_note import (
+from riffle.sdocx_note import (
     PageOrder,
     PageOrderEntry,
     SdocxNoteError,

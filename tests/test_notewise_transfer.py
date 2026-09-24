@@ -11,14 +11,14 @@ from zipfile import ZipFile
 import pymupdf
 from PIL import Image
 
-from noteditor.notewise_ink import read_notewise_strokes, render_notewise_ink
-from noteditor.notewise_proto import NotewiseTransferError, iter_fields
-from noteditor.notewise_transfer import (
+from riffle.notewise_ink import read_notewise_strokes, render_notewise_ink
+from riffle.notewise_proto import NotewiseTransferError, iter_fields
+from riffle.notewise_transfer import (
     _page_ids,
     inspect_notewise_transfer,
     transfer_notewise_handwriting,
 )
-from noteditor.page_plan import PagePlan, PlanSlot
+from riffle.page_plan import PagePlan, PlanSlot
 
 
 def _varint(value: int) -> bytes:

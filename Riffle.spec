@@ -5,17 +5,17 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 webview_data, webview_binaries, webview_hidden = collect_all("webview")
 
-# 배포 빌드는 `python -m noteditor.stamp_version` 이 먼저 만들어 둔다. 이 파일이 빠지면
+# 배포 빌드는 `python -m riffle.stamp_version` 이 먼저 만들어 둔다. 이 파일이 빠지면
 # 설치된 앱은 깃이 없어 자기 버전을 모른다. 없을 때 hiddenimports 에 넣으면 빌드가
 # 경고를 내므로, 있을 때만 넣는다.
-version_stamp = ["noteditor._version"] if Path("noteditor/_version.py").exists() else []
+version_stamp = ["riffle._version"] if Path("riffle/_version.py").exists() else []
 
 desktop_a = Analysis(
     ["launch.pyw"],
     pathex=[],
     binaries=webview_binaries,
     datas=webview_data + [
-        ("noteditor/static", "noteditor/static"),
+        ("riffle/static", "riffle/static"),
         ("assets/icon.ico", "assets"),
     ],
     hiddenimports=webview_hidden + collect_submodules("pymupdf") + ["pikepdf"] + version_stamp,
@@ -31,10 +31,10 @@ local_web_a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ("noteditor/static", "noteditor/static"),
+        ("riffle/static", "riffle/static"),
         ("assets/icon.ico", "assets"),
     ],
-    hiddenimports=collect_submodules("pymupdf") + ["pikepdf", "noteditor.web"] + version_stamp,
+    hiddenimports=collect_submodules("pymupdf") + ["pikepdf", "riffle.web"] + version_stamp,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -49,7 +49,7 @@ desktop_exe = EXE(
     desktop_a.scripts,
     [],
     exclude_binaries=True,
-    name="NotEditor",
+    name="Riffle",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -63,7 +63,7 @@ local_web_exe = EXE(
     local_web_a.scripts,
     [],
     exclude_binaries=True,
-    name="NotEditorLocalWeb",
+    name="RiffleLocalWeb",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -80,5 +80,5 @@ coll = COLLECT(
     local_web_a.datas,
     strip=False,
     upx=True,
-    name="NotEditor",
+    name="Riffle",
 )

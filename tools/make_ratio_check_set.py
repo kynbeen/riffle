@@ -20,8 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pymupdf
 
-from noteditor.goodnotes_archive import background_pdf, read_document, safe_members
-from noteditor.handwriting_transfer import inspect_transfer, transfer_handwriting, output_suffix
+from riffle.goodnotes_archive import background_pdf, read_document, safe_members
+from riffle.handwriting_transfer import inspect_transfer, transfer_handwriting, output_suffix
 
 # 세로로 이만큼 늘린다. 원본 본문은 가운데에 그대로 두고 위아래로 여백이 생긴다.
 HEIGHT_GROWTH = 1.30

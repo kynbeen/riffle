@@ -6,8 +6,8 @@
 
 빌드된 앱 안에는 깃 저장소가 없으므로, 출처를 순서대로 훑는다:
 
-1. ``NOTEDITOR_VERSION`` 환경변수 — 어디서든 강제로 지정할 때
-2. ``noteditor/_version.py`` — 배포 빌드 때 태그에서 새겨 넣는 파일 (버전 관리 대상 아님)
+1. ``RIFFLE_VERSION`` 환경변수 — 어디서든 강제로 지정할 때
+2. ``riffle/_version.py`` — 배포 빌드 때 태그에서 새겨 넣는 파일 (버전 관리 대상 아님)
 3. ``git describe`` — 개발 중 체크아웃. 태그 이후 커밋 수까지 붙어 나온다
 4. 배포 플랫폼이 알려주는 커밋 해시
 5. 아무것도 없으면 ``0.0.0+unknown`` — 모르면 모른다고 말한다
@@ -90,7 +90,7 @@ def _stamped_version() -> str | None:
 
 def resolve_version() -> str:
     """모듈 문서에 적은 순서대로 출처를 훑어 버전 하나를 정한다."""
-    override = os.environ.get("NOTEDITOR_VERSION", "").strip()
+    override = os.environ.get("RIFFLE_VERSION", "").strip()
     if override:
         return override
     stamped = _stamped_version()

@@ -1,12 +1,12 @@
 services:
   - type: web
-    name: noteditor
+    name: riffle
     runtime: docker
     plan: free
     region: singapore
     healthCheckPath: /api/health
     envVars:
-      - key: NOTEDITOR_MAX_UPLOAD_MB
+      - key: RIFFLE_MAX_UPLOAD_MB
         value: "100"
-      - key: NOTEDITOR_SESSION_TTL
+      - key: RIFFLE_SESSION_TTL
         value: "3600"

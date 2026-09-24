@@ -1,6 +1,6 @@
-# NotEditor
+# Riffle
 
-NotEditor는 PDF 문서 합치기와 Samsung Notes·Notewise·Goodnotes 6 필기 옮기기를 한 화면에서
+Riffle은 PDF 문서 합치기와 Samsung Notes·Notewise·Goodnotes 6 필기 옮기기를 한 화면에서
 제공하는 도구입니다.
 Windows 데스크톱 앱과 Docker 기반 웹앱이 같은 PDF·필기 문서 처리 엔진을 사용합니다.
 Android 앱은 2026-09-24 사용자 결정으로 걷었습니다(명세 `2026-09-24-01`).
@@ -51,8 +51,8 @@ Goodnotes 목차 입력·생성 기능은 제공하지 않습니다. 기존 목�
 
 ## 가장 쉬운 Windows 설치
 
-[**최신 릴리스**](https://github.com/kynbeen/NotEditor/releases/latest)에서
-`NotEditor-Setup-<버전>.exe`를 내려받아 실행합니다. Python을 따로 설치할 필요가 없고,
+[**최신 릴리스**](https://github.com/kynbeen/riffle/releases/latest)에서
+`Riffle-Setup-<버전>.exe`를 내려받아 실행합니다. Python을 따로 설치할 필요가 없고,
 설치 프로그램이 시작 메뉴와 바탕화면에 두 실행 방식의 바로가기를 만듭니다.
 
 서명 인증서가 없어 처음 실행할 때 SmartScreen의 「Windows의 PC 보호」 창이 뜹니다.
@@ -64,7 +64,7 @@ Goodnotes 목차 입력·생성 기능은 제공하지 않습니다. 기존 목�
 내려받기와 설치를 한 번에 끝냅니다. PowerShell에 붙여넣고 Enter를 누르면 됩니다.
 
 ```powershell
-iwr https://raw.githubusercontent.com/kynbeen/NotEditor/main/install-online.ps1 -OutFile "$env:TEMP\NotEditor-install.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\NotEditor-install.ps1"
+iwr https://raw.githubusercontent.com/kynbeen/riffle/main/install-online.ps1 -OutFile "$env:TEMP\Riffle-install.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\Riffle-install.ps1"
 ```
 
 [`install-online.ps1`](install-online.ps1)은 최신 릴리스 조회 → 설치 파일 내려받기 →
@@ -89,13 +89,13 @@ Python 3.12 이상이 필요하며, 전용 `venv` 생성·의존성 설치·아�
 있습니다(이미 열려 있던 터미널에는 적용되지 않으니 새 창을 여세요).
 
 ```powershell
-noteditor
+riffle
 ```
 
-실행 주체는 저장소 루트의 `noteditor.cmd`이며, `venv`의 `pythonw.exe`가 있으면 그것으로,
-없으면 `dist\NotEditor\NotEditor.exe`로 앱을 띄웁니다.
+실행 주체는 저장소 루트의 `riffle.cmd`이며, `venv`의 `pythonw.exe`가 있으면 그것으로,
+없으면 `dist\Riffle\Riffle.exe`로 앱을 띄웁니다.
 
-`noteditor.cmd`는 **저장소 루트에 그대로 두세요.** 이 파일은 자기가 있는 폴더를 NotEditor
+`riffle.cmd`는 **저장소 루트에 그대로 두세요.** 이 파일은 자기가 있는 폴더를 Riffle
 루트로 보고 `venv`·`dist`를 찾습니다. 다른 폴더로 복사하지 말고, PATH에는 이 폴더를 넣습니다.
 
 Sleek 인계(`--open-plan` 합치기·원본 비교)는 2026-09-24 사용자 결정으로 걷었습니다(명세
@@ -109,10 +109,10 @@ Sleek 인계(`--open-plan` 합치기·원본 비교)는 2026-09-24 사용자 결
 
 ```powershell
 .\install.ps1
-.\venv\Scripts\python.exe -m noteditor --debug
+.\venv\Scripts\python.exe -m riffle --debug
 ```
 
-앱 로그는 `%LOCALAPPDATA%\NotEditor\app.log`에 기록됩니다.
+앱 로그는 `%LOCALAPPDATA%\Riffle\app.log`에 기록됩니다.
 
 데스크톱 앱도 내장 로컬 HTTP 서버에서 동일한 PWA 셸을 실행합니다. 시작할 때 창을 최대화하며
 `F11`로 테두리 없는 전체화면을 켜거나 끌 수 있습니다. 문서 선택과 저장은 기존처럼 로컬 네이티브
@@ -120,20 +120,20 @@ Sleek 인계(`--open-plan` 합치기·원본 비교)는 2026-09-24 사용자 결
 
 ## 로컬 웹 앱 실행
 
-Windows 설치 후 `NotEditor 로컬 웹` 바로가기를 실행하면 배포 서버 대신 사용자 PC 안에서만
-NotEditor 웹 서버가 시작됩니다. Edge 또는 Chrome의 독립 앱 모드 창이 열리며, 배포 웹앱과 같은
+Windows 설치 후 `Riffle 로컬 웹` 바로가기를 실행하면 배포 서버 대신 사용자 PC 안에서만
+Riffle 웹 서버가 시작됩니다. Edge 또는 Chrome의 독립 앱 모드 창이 열리며, 배포 웹앱과 같은
 브라우저 파일 업로드·다운로드 흐름을 사용합니다. 서버는 `http://127.0.0.1:8765`에만 열리므로
 같은 네트워크의 다른 기기에서는 접근할 수 없습니다.
 
 소스 체크아웃에서는 다음 명령으로 같은 실행기를 확인할 수 있습니다.
 
 ```powershell
-.\venv\Scripts\python.exe -m noteditor.local_web
+.\venv\Scripts\python.exe -m riffle.local_web
 ```
 
-기존 `NotEditor` 바로가기는 pywebview 데스크톱 앱을 계속 열며, 브라우저에서 설치한 원격 PWA도
+기존 `Riffle` 바로가기는 pywebview 데스크톱 앱을 계속 열며, 브라우저에서 설치한 원격 PWA도
 변경되지 않습니다. 로컬 웹 전용 포트를 다른 프로그램이 사용 중이면
-`%LOCALAPPDATA%\NotEditor\local-web.log`에 진단 내용을 남기고 실행을 중단합니다.
+`%LOCALAPPDATA%\Riffle\local-web.log`에 진단 내용을 남기고 실행을 중단합니다.
 
 ## 웹앱 실행
 
@@ -147,14 +147,14 @@ docker compose up --build
 
 ```powershell
 .\venv\Scripts\python.exe -m pip install -r requirements-web.txt
-.\venv\Scripts\python.exe -m noteditor.web
+.\venv\Scripts\python.exe -m riffle.web
 ```
 
 웹 업로드는 브라우저 세션별 임시 디렉터리에 격리됩니다. 기본 만료 시간은 2시간이며 서버 종료,
 세션 만료 또는 필기 선택 초기화 시 정리됩니다. 결과 파일은 생성 직후 다운로드로 반환되고 서버의
 임시 출력은 응답 완료 후 삭제됩니다.
 
-웹앱은 PWA로 제공됩니다. 지원 브라우저의 주소창 또는 메뉴에서 NotEditor를 설치하면 독립 창과
+웹앱은 PWA로 제공됩니다. 지원 브라우저의 주소창 또는 메뉴에서 Riffle을 설치하면 독립 창과
 앱 아이콘으로 실행할 수 있습니다. 서비스 워커는 UI 파일만 오프라인 캐시하며 `/api/` 요청,
 업로드 문서와 변환 결과는 캐시하지 않습니다. 문서 작업에는 서버 연결이 필요합니다.
 
@@ -163,14 +163,14 @@ docker compose up --build
 | 변수 | 기본값 | 설명 |
 |---|---:|---|
 | `PORT` | `8000` | 웹 서버 포트 |
-| `NOTEDITOR_HOST` | `0.0.0.0` | 바인드 주소 |
-| `NOTEDITOR_MAX_UPLOAD_MB` | `512` | 파일 하나의 최대 업로드 크기 |
-| `NOTEDITOR_SESSION_TTL` | `7200` | 비활성 작업공간 만료 시간(초) |
-| `NOTEDITOR_MAX_SESSIONS` | `200` | 동시 작업공간 상한. 넘으면 가장 오래 쉰 것부터 정리 |
-| `NOTEDITOR_SWEEP_INTERVAL` | `60` | 만료된 작업공간을 쓸어내는 주기(초) |
-| `NOTEDITOR_PREVIEW_CONCURRENCY` | `2` | 프로세스 전체에서 동시에 렌더링할 미리보기 수 |
-| `NOTEDITOR_PREVIEW_CACHE_MB` | `16` | 사용자 작업공간 하나의 미리보기 LRU 캐시 상한(MB) |
-| `NOTEDITOR_ANALYSIS_CONCURRENCY` | `1` | 동시에 실행할 필기 문서 분석 작업 수 |
+| `RIFFLE_HOST` | `0.0.0.0` | 바인드 주소 |
+| `RIFFLE_MAX_UPLOAD_MB` | `512` | 파일 하나의 최대 업로드 크기 |
+| `RIFFLE_SESSION_TTL` | `7200` | 비활성 작업공간 만료 시간(초) |
+| `RIFFLE_MAX_SESSIONS` | `200` | 동시 작업공간 상한. 넘으면 가장 오래 쉰 것부터 정리 |
+| `RIFFLE_SWEEP_INTERVAL` | `60` | 만료된 작업공간을 쓸어내는 주기(초) |
+| `RIFFLE_PREVIEW_CONCURRENCY` | `2` | 프로세스 전체에서 동시에 렌더링할 미리보기 수 |
+| `RIFFLE_PREVIEW_CACHE_MB` | `16` | 사용자 작업공간 하나의 미리보기 LRU 캐시 상한(MB) |
+| `RIFFLE_ANALYSIS_CONCURRENCY` | `1` | 동시에 실행할 필기 문서 분석 작업 수 |
 
 ### 접속자별 작업공간
 
@@ -184,12 +184,12 @@ docker compose up --build
   이걸 저장하면 다음 사람에게 남의 문서가, 첫 화면이라면 남의 세션 쿠키까지 건네집니다.
 - **자동 정리**: 같은 자리에 파일을 다시 올리면 앞엣것을 지웁니다. 목록에서 뺀 문서는 사본까지
   지우고, 등록에 실패한 업로드도 남기지 않습니다. 비활성 작업공간은
-  `NOTEDITOR_SWEEP_INTERVAL`마다 통째로 사라집니다.
+  `RIFFLE_SWEEP_INTERVAL`마다 통째로 사라집니다.
 - **수동 정리는 도구별입니다.** 문서 합치기의 `문서 비우기`와 필기 옮기기의 `선택 초기화`는
   각각 자기 폴더만 비웁니다. 한쪽을 정리해도 다른 쪽에서 고르던 파일은 그대로 남습니다.
 
 실서비스에서는 Docker 이미지를 HTTPS 역방향 프록시 뒤에 두고, 프록시의 요청 본문 제한도
-`NOTEDITOR_MAX_UPLOAD_MB` 이상으로 맞추세요. NotEditor는 로그인 기능을 제공하지 않으므로 공개
+`RIFFLE_MAX_UPLOAD_MB` 이상으로 맞추세요. Riffle은 로그인 기능을 제공하지 않으므로 공개
 인터넷에 배포할 때는 호스팅 플랫폼이나 프록시에서 접근 제어를 추가하는 것을 권장합니다.
 
 ## Docker 배포
@@ -203,8 +203,8 @@ Cloud Run, Railway 또는 일반 컨테이너 서버에 배포할 수 있습니�
 별도 서버를 실행할 필요가 없습니다.
 
 ```bash
-docker build -t noteditor .
-docker run --rm -p 8000:8000 noteditor
+docker build -t riffle .
+docker run --rm -p 8000:8000 riffle
 ```
 
 서버는 상태를 로컬 임시 저장소에만 두므로 여러 인스턴스로 확장할 때는 같은 사용자의 요청이 같은
@@ -215,7 +215,7 @@ docker run --rm -p 8000:8000 noteditor
 ```powershell
 .\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\venv\Scripts\python.exe -m unittest discover -s tests
-node --check noteditor\static\app.js
+node --check riffle\static\app.js
 ```
 
 ## 릴리스 파일 만들기
@@ -227,7 +227,7 @@ node --check noteditor\static\app.js
 1. 전체 테스트 실행
 2. 태그에서 버전을 확정해 앱과 설치 파일에 함께 새김
 3. PyInstaller로 독립 실행 폴더 생성
-4. Inno Setup으로 `NotEditor-Setup-<버전>.exe` 생성
+4. Inno Setup으로 `Riffle-Setup-<버전>.exe` 생성
 5. GitHub Release에 설치 파일 첨부
 
 ### 버전은 어디서 오나
@@ -243,23 +243,23 @@ node --check noteditor\static\app.js
 | 태그가 아직 없는 저장소 | `0.0.0+<커밋해시>` |
 | 알 방법이 전혀 없을 때 | `0.0.0+unknown` |
 
-`NOTEDITOR_VERSION` 환경변수를 주면 그 값이 무엇보다 우선합니다.
+`RIFFLE_VERSION` 환경변수를 주면 그 값이 무엇보다 우선합니다.
 
 로컬에서는 Python 개발 의존성과 Inno Setup 6을 설치한 뒤 같은 과정을 실행할 수 있습니다.
 
 ```powershell
 .\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\venv\Scripts\python.exe -m noteditor.make_icon
-$version = .\venv\Scripts\python.exe -m noteditor.stamp_version
-.\venv\Scripts\pyinstaller.exe --noconfirm NotEditor.spec
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" "installer\NotEditor.iss"
+.\venv\Scripts\python.exe -m riffle.make_icon
+$version = .\venv\Scripts\python.exe -m riffle.stamp_version
+.\venv\Scripts\pyinstaller.exe --noconfirm Riffle.spec
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" "installer\Riffle.iss"
 ```
 
 ## 폴더 구조
 
 ```text
-NotEditor/                 Git 저장소 루트
-├─ noteditor/              import 가능한 Python 애플리케이션 패키지
+Riffle/                 Git 저장소 루트
+├─ riffle/              import 가능한 Python 애플리케이션 패키지
 │  └─ static/              데스크톱과 웹이 함께 쓰는 UI
 ├─ tests/                  엔진·UI·웹 API 테스트
 ├─ installer/              Windows 설치 프로그램 정의
@@ -268,7 +268,7 @@ NotEditor/                 Git 저장소 루트
 └─ install.ps1             소스 기반 원터치 Windows 설치
 ```
 
-저장소와 `noteditor` 패키지가 한 단계 중첩된 것은 의도된 구조입니다. Python 런타임 코드와 정적
+저장소와 `riffle` 패키지가 한 단계 중첩된 것은 의도된 구조입니다. Python 런타임 코드와 정적
 자원을 하나의 import 패키지로 묶어 테스트·Docker·PyInstaller에서 같은 경로로 찾게 하고, 루트의
 문서·설치·배포 파일과 섞이지 않게 합니다.
 
@@ -296,7 +296,7 @@ NotEditor/                 Git 저장소 루트
 
 ## 라이선스
 
-NotEditor 자체 코드는 [MIT License](LICENSE)로 제공됩니다.
+Riffle 자체 코드는 [MIT License](LICENSE)로 제공됩니다.
 데스크톱·웹에서 사용하는 PyMuPDF는 [AGPL-3.0 또는 Artifex 상용 라이선스](https://pymupdf.readthedocs.io/en/latest/about.html)를 따릅니다.
 개인 기기에서 혼자 사용하는 데 상용 라이선스가 필수인 것은 아닙니다. 다만 무료 배포도
 배포이며, PyMuPDF를 포함한 프로그램의 배포·네트워크 제공에는 해당 라이선스의 소스 제공 등

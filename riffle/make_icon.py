@@ -61,7 +61,7 @@ def build_pwa_icons(output_dir: Path) -> None:
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
     build_icon(root / "assets" / "icon.ico")
-    build_pwa_icons(root / "noteditor" / "static" / "icons")
+    build_pwa_icons(root / "riffle" / "static" / "icons")
 
 
 if __name__ == "__main__":

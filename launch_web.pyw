@@ -1,3 +1,3 @@
-from noteditor.local_web import main
+from riffle.local_web import main
 
 main()

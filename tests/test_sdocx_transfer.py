@@ -10,9 +10,9 @@ from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 import pymupdf
 
-from noteditor.sdocx_end_tag import patch_end_tag, read_end_tag
-from noteditor.sdocx_note import read_note_times
-from noteditor.sdocx_transfer import (
+from riffle.sdocx_end_tag import patch_end_tag, read_end_tag
+from riffle.sdocx_note import read_note_times
+from riffle.sdocx_transfer import (
     ArchiveAddition,
     SdocxTransferError,
     _rewrite_archive,
@@ -197,7 +197,7 @@ class SdocxTransferTests(unittest.TestCase):
             self.source_sdocx, self.target_pdf, 0
         )
         with patch(
-            "noteditor.sdocx_transfer.render_comparison",
+            "riffle.sdocx_transfer.render_comparison",
             return_value=(before, after),
         ) as compare:
             preview_transfer(

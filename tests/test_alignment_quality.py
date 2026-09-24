@@ -5,11 +5,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from noteditor.alignment import Alignment
-from noteditor.app import ComposerApi
-from noteditor.page_match import MatchResult, PagePair
-from noteditor.transfer_plan import TransferInspection
-from noteditor.web import HandwritingExportRequest, _export_handwriting
+from riffle.alignment import Alignment
+from riffle.app import ComposerApi
+from riffle.page_match import MatchResult, PagePair
+from riffle.transfer_plan import TransferInspection
+from riffle.web import HandwritingExportRequest, _export_handwriting
 
 POINTS_PER_MM = 72 / 25.4
 
@@ -68,7 +68,7 @@ class AlignmentQualityTests(unittest.TestCase):
                         return response['result']
 
                     with self.subTest(web=web), patch(
-                        'noteditor.web.transfer_handwriting' if web else 'noteditor.app.transfer_handwriting',
+                        'riffle.web.transfer_handwriting' if web else 'riffle.app.transfer_handwriting',
                         return_value={'path': str(output)},
                     ) as transfer:
                         for plan in (None, rows):

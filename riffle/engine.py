@@ -13,12 +13,12 @@ from typing import Iterable
 
 
 PREVIEW_CACHE_MAX_BYTES = int(
-    os.environ.get("NOTEDITOR_PREVIEW_CACHE_MB", "16")
+    os.environ.get("RIFFLE_PREVIEW_CACHE_MB", "16")
 ) * 1024 * 1024
 # 렌더는 CPU 를 쓴다. 2 는 코어가 몇 개든 2 였다 — 큰 PDF 를 넘길 때 그만큼 줄을 섰다.
 # 코어 하나는 UI 스레드에 남긴다.
 PREVIEW_RENDER_CONCURRENCY = max(
-    1, int(os.environ.get("NOTEDITOR_PREVIEW_CONCURRENCY", "0"))
+    1, int(os.environ.get("RIFFLE_PREVIEW_CONCURRENCY", "0"))
     or min(4, max(2, (os.cpu_count() or 2) - 1))
 )
 _PREVIEW_RENDER_SLOTS = threading.BoundedSemaphore(PREVIEW_RENDER_CONCURRENCY)
@@ -99,7 +99,7 @@ class ComposerSession:
     """Owns source paths and preview caches for one process-local app session."""
 
     def __init__(self, *, preview_cache_max_bytes: int = PREVIEW_CACHE_MAX_BYTES) -> None:
-        self._temporary = tempfile.TemporaryDirectory(prefix="noteditor-")
+        self._temporary = tempfile.TemporaryDirectory(prefix="riffle-")
         self.temp_dir = Path(self._temporary.name)
         self._sources: dict[str, SourceDocument] = {}
         self._source_order: list[str] = []

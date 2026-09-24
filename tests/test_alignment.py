@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pymupdf
 
-from noteditor.alignment import (
+from riffle.alignment import (
     build_aligned_pdf,
     estimate_alignment,
     ink_box,

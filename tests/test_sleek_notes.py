@@ -8,13 +8,13 @@ from zipfile import ZipFile
 
 import pymupdf
 
-from noteditor.alignment import estimate_alignment
-from noteditor.page_match import match_pages
-from noteditor.sdocx_ink import read_ink_strokes
-from noteditor.sdocx_page import read_page
-from noteditor.sdocx_rebuild import rebuild_handwriting
-from noteditor.sdocx_transfer import inspect_transfer
-from noteditor.sleek_notes import original_box
+from riffle.alignment import estimate_alignment
+from riffle.page_match import match_pages
+from riffle.sdocx_ink import read_ink_strokes
+from riffle.sdocx_page import read_page
+from riffle.sdocx_rebuild import rebuild_handwriting
+from riffle.sdocx_transfer import inspect_transfer
+from riffle.sleek_notes import original_box
 from tests.test_page_match import SEEDS, make_document
 from tests.test_sdocx_ink import make_stroke_layers
 from tests.test_sdocx_rebuild import UUIDS, make_rebuild_source

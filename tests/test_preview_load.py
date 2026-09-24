@@ -10,9 +10,9 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-import noteditor.engine as engine_module
-from noteditor.engine import ComposerSession
-from noteditor.web import app
+import riffle.engine as engine_module
+from riffle.engine import ComposerSession
+from riffle.web import app
 from tests.test_sdocx_transfer import make_pdf
 
 

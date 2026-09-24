@@ -14,9 +14,9 @@ from unittest.mock import Mock, patch
 
 import pymupdf
 
-from noteditor.app import ComposerApi, run
-from noteditor.engine import ComposerSession
-from noteditor.page_match import MatchResult, PagePair
+from riffle.app import ComposerApi, run
+from riffle.engine import ComposerSession
+from riffle.page_match import MatchResult, PagePair
 
 
 class FakeWindow:
@@ -164,7 +164,7 @@ class ComposerApiTests(unittest.TestCase):
             start=Mock(),
         )
         with patch.dict(sys.modules, {"webview": webview}), \
-                patch("noteditor.app.configure_windows_app_identity"):
+                patch("riffle.app.configure_windows_app_identity"):
             run()
 
         self.assertTrue(webview.create_window.call_args.kwargs["maximized"])
@@ -197,8 +197,8 @@ class ComposerApiTests(unittest.TestCase):
         })
         self.api._bind_window(FakeWindow([(str(source),), (str(target),), str(output)]))
         with patch.dict(sys.modules, {"webview": self.webview}), \
-                patch("noteditor.app.inspect_transfer", return_value=inspection), \
-                patch("noteditor.app.transfer_handwriting", return_value={
+                patch("riffle.app.inspect_transfer", return_value=inspection), \
+                patch("riffle.app.transfer_handwriting", return_value={
                     "path": str(output), "page_count": 2,
                 }) as transfer:
             selected_source = self.api.choose_handwriting_source()
@@ -237,7 +237,7 @@ class ComposerApiTests(unittest.TestCase):
             stages.append("preview")
             return inspection
 
-        with patch("noteditor.app.inspect_transfer", side_effect=inspect):
+        with patch("riffle.app.inspect_transfer", side_effect=inspect):
             self.api._set_handwriting_path("source", source)
             self.api._set_handwriting_path("target", target)
             failed = self.wait_for_handwriting_analysis()
@@ -276,8 +276,8 @@ class ComposerApiTests(unittest.TestCase):
                 window = FakeWindow([(str(source),), (str(target),), str(output)])
                 self.api._bind_window(window)
                 with patch.dict(sys.modules, {"webview": self.webview}), \
-                        patch("noteditor.app.inspect_transfer", return_value=inspection), \
-                        patch("noteditor.app.transfer_handwriting", return_value={
+                        patch("riffle.app.inspect_transfer", return_value=inspection), \
+                        patch("riffle.app.transfer_handwriting", return_value={
                             "path": str(output), "page_count": 1,
                         }):
                     self.api.choose_handwriting_source()
@@ -335,8 +335,8 @@ class ComposerApiTests(unittest.TestCase):
         inspection = SimpleNamespace(page_count=3, alignment=None, as_dict=lambda: {"page_count": 3})
         self.api._handwriting_source = source
         self.api._handwriting_target = target
-        with patch("noteditor.app.inspect_transfer", return_value=inspection) as inspect, \
-                patch("noteditor.app.preview_transfer",
+        with patch("riffle.app.inspect_transfer", return_value=inspection) as inspect, \
+                patch("riffle.app.preview_transfer",
                       return_value=(b"\x89PNG-before", b"\x89PNG-after", b"\x89PNG-ink", 17)) as preview:
             first = self.api.handwriting_preview(1)
             second = self.api.handwriting_preview(99)
@@ -372,10 +372,10 @@ class ComposerApiTests(unittest.TestCase):
         self.api._handwriting_target = target
         self.api._bind_window(FakeWindow([str(output)]))
         with patch.dict(sys.modules, {"webview": self.webview}), \
-                patch("noteditor.app.inspect_transfer", return_value=inspection), \
-                patch("noteditor.page_match.match_from_target_mapping",
+                patch("riffle.app.inspect_transfer", return_value=inspection), \
+                patch("riffle.page_match.match_from_target_mapping",
                       return_value=manual) as convert, \
-                patch("noteditor.app.transfer_handwriting",
+                patch("riffle.app.transfer_handwriting",
                       return_value={"path": str(output)}) as transfer:
             saved = self.api.save_handwriting_transfer("target-필기.sdocx", [0, None, 2])
 
@@ -411,8 +411,8 @@ class ComposerApiTests(unittest.TestCase):
         self.api._handwriting_target = target
         self.api._bind_window(FakeWindow([str(output), str(output)]))
         with patch.dict(sys.modules, {"webview": self.webview}), \
-                patch("noteditor.app.inspect_transfer", return_value=inspection), \
-                patch("noteditor.app.transfer_handwriting",
+                patch("riffle.app.inspect_transfer", return_value=inspection), \
+                patch("riffle.app.transfer_handwriting",
                       return_value={"path": str(output)}) as transfer:
             rejected = self.api.save_handwriting_transfer("target-필기.sdocx", payload)
             saved = self.api.save_handwriting_transfer(

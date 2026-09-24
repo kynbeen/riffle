@@ -1,10 +1,10 @@
-"""배포 빌드 직전에 태그에서 읽은 버전을 ``noteditor/_version.py`` 로 새긴다.
+"""배포 빌드 직전에 태그에서 읽은 버전을 ``riffle/_version.py`` 로 새긴다.
 
 빌드된 앱 안에는 깃 저장소가 없어서 ``git describe`` 를 쓸 수 없다. 그래서 빌드하는
 쪽에서 한 번 확정한 값을 파일로 남겨 둔다. 확정한 버전을 표준 출력으로도 내보내므로,
 설치 파일 빌드에 그대로 넘겨 쓰면 앱과 설치 파일이 같은 번호를 갖는다.
 
-사용: ``python -m noteditor.stamp_version [태그]``
+사용: ``python -m riffle.stamp_version [태그]``
 """
 from __future__ import annotations
 

@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 
-APP_JS = Path(__file__).parents[1] / "noteditor" / "static" / "app.js"
+APP_JS = Path(__file__).parents[1] / "riffle" / "static" / "app.js"
 
 DRIVER = r"""
 const fs = require("node:fs");

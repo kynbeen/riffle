@@ -6,7 +6,7 @@ from pathlib import Path
 class StaticUiContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        static = Path(__file__).parents[1] / "noteditor" / "static"
+        static = Path(__file__).parents[1] / "riffle" / "static"
         cls.html = (static / "index.html").read_text(encoding="utf-8")
         cls.css = (static / "app.css").read_text(encoding="utf-8")
         cls.js = (static / "app.js").read_text(encoding="utf-8")
@@ -61,7 +61,7 @@ class StaticUiContractTests(unittest.TestCase):
     def test_sleek_handoff_screen_is_gone(self):
         """Sleek 인계 전용 화면은 걷었다(명세 2026-09-24-01 작업 단위 1). 흔적이 남으면
         아무도 부르지 않는 갈래가 다시 자란다."""
-        root = Path(__file__).parents[1] / "noteditor"
+        root = Path(__file__).parents[1] / "riffle"
         main = (root / "__main__.py").read_text(encoding="utf-8")
         app = (root / "app.py").read_text(encoding="utf-8")
         for word in ("startup_plan", "sourceReview", "suggestRanges", "finish_review",
@@ -79,7 +79,7 @@ class StaticUiContractTests(unittest.TestCase):
         self.assertIn('id="addPdfButton" class="button secondary" type="button" disabled', self.html)
         self.assertIn('id="emptyAddButton" class="button primary" type="button" disabled', self.html)
         self.assertIn('callApi("health")', self.js)
-        self.assertIn("NotEditor 연결을 확인할 수 없습니다", self.js)
+        self.assertIn("Riffle 연결을 확인할 수 없습니다", self.js)
         self.assertIn('window.location.hash === "#desktop"', self.js)
 
     def test_merge_and_handwriting_are_peer_tabs(self):
@@ -112,7 +112,7 @@ class StaticUiContractTests(unittest.TestCase):
             "필기 좌표 정렬 중…",
             "미리보기 준비 중…",
         ):
-            self.assertIn(message, (Path(__file__).parents[1] / "noteditor" / "app.py").read_text(encoding="utf-8"))
+            self.assertIn(message, (Path(__file__).parents[1] / "riffle" / "app.py").read_text(encoding="utf-8"))
         self.assertIn('id="retryHandwritingButton"', self.html)
 
     def test_buttons_keep_their_labels_on_one_line(self):
@@ -193,8 +193,8 @@ class StaticUiContractTests(unittest.TestCase):
         root = Path(__file__).parents[1]
         self.assertNotIn("AndroidBridge", self.js)
         self.assertFalse((root / "android").exists())
-        self.assertFalse((root / "noteditor" / "_android_pdf.py").exists())
-        self.assertNotIn("dispatch_call", (root / "noteditor" / "app.py").read_text(encoding="utf-8"))
+        self.assertFalse((root / "riffle" / "_android_pdf.py").exists())
+        self.assertNotIn("dispatch_call", (root / "riffle" / "app.py").read_text(encoding="utf-8"))
 
     def test_service_worker_never_caches_api_or_upload_responses(self):
         self.assertIn('"/vendor/sortable-1.15.7.min.js"', self.service_worker)

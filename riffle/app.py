@@ -27,7 +27,7 @@ from .handwriting_transfer import (
     with_output_suffix,
 )
 
-APP_USER_MODEL_ID = "NotEditor.Desktop"
+APP_USER_MODEL_ID = "Riffle.Desktop"
 MISSING_HANDWRITING_MESSAGE = "필기 원본과 대상 PDF를 모두 선택하세요."
 # 저장 대화상자에 보여줄 형식 이름. 결과는 늘 원본과 같은 형식으로 나간다.
 HANDWRITING_SAVE_TYPES = {
@@ -36,11 +36,11 @@ HANDWRITING_SAVE_TYPES = {
     ".goodnotes": "Goodnotes 문서 (*.goodnotes)",
 }
 HANDWRITING_ANALYSIS_CONCURRENCY = max(
-    1, int(os.environ.get("NOTEDITOR_ANALYSIS_CONCURRENCY", "1"))
+    1, int(os.environ.get("RIFFLE_ANALYSIS_CONCURRENCY", "1"))
 )
 _HANDWRITING_ANALYSIS_EXECUTOR = ThreadPoolExecutor(
     max_workers=HANDWRITING_ANALYSIS_CONCURRENCY,
-    thread_name_prefix="noteditor-analysis",
+    thread_name_prefix="riffle-analysis",
 )
 _ANALYSIS_MESSAGES = {
     "waiting": "두 파일을 선택해 주세요.",
@@ -73,11 +73,11 @@ def configure_windows_app_identity(app_id: str = APP_USER_MODEL_ID) -> None:
         set_app_id.restype = ctypes.c_long
         result = set_app_id(app_id)
         if result != 0:
-            logging.getLogger("noteditor").warning(
+            logging.getLogger("riffle").warning(
                 "Failed to set AppUserModelID: HRESULT=%s", result
             )
     except Exception:
-        logging.getLogger("noteditor").exception(
+        logging.getLogger("riffle").exception(
             "Failed to configure Windows app identity"
         )
 
@@ -114,7 +114,7 @@ class ComposerApi:
 
     @staticmethod
     def _error(exc: Exception) -> dict:
-        logging.getLogger("noteditor").error(
+        logging.getLogger("riffle").error(
             "Desktop API request failed: %s", exc, exc_info=exc
         )
         return {"ok": False, "error": str(exc)}
@@ -123,7 +123,7 @@ class ComposerApi:
         return self._ok(version=__version__)
 
     def log_client_error(self, message: str) -> dict:
-        logging.getLogger("noteditor").error("UI error: %s", message)
+        logging.getLogger("riffle").error("UI error: %s", message)
         return self._ok()
 
     def toggle_fullscreen(self) -> dict:
@@ -585,7 +585,7 @@ def run(debug: bool = False) -> None:
     api = ComposerApi()
     static_file = Path(__file__).with_name("static") / "index.html"
     window = webview.create_window(
-        "NotEditor",
+        "Riffle",
         str(static_file.resolve()) + "#desktop",
         js_api=api,
         width=1440,
@@ -611,7 +611,7 @@ def configure_logging() -> Path:
     import os
 
     local_data = Path(os.environ.get("LOCALAPPDATA", Path.home()))
-    log_dir = local_data / "NotEditor"
+    log_dir = local_data / "Riffle"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "app.log"
     logging.basicConfig(
@@ -621,5 +621,5 @@ def configure_logging() -> Path:
         encoding="utf-8",
         force=True,
     )
-    logging.getLogger("noteditor").info("Application starting (version %s)", __version__)
+    logging.getLogger("riffle").info("Application starting (version %s)", __version__)
     return log_path

@@ -1,0 +1,18 @@
+@echo off
+rem ASCII only, CRLF only. cmd.exe misparses LF-only batch files and mangles
+rem non-ASCII comments in the OEM codepage. Korean notes live in README.md.
+rem
+rem Put this folder on PATH and `riffle` launches the desktop app from anywhere.
+rem This file must stay in the Riffle root: it finds venv and dist next to itself.
+setlocal
+set "NE_ROOT=%~dp0"
+if exist "%NE_ROOT%venv\Scripts\pythonw.exe" (
+    start "" /d "%NE_ROOT%" "%NE_ROOT%venv\Scripts\pythonw.exe" -m riffle %*
+    exit /b 0
+)
+if exist "%NE_ROOT%dist\Riffle\Riffle.exe" (
+    start "" /d "%NE_ROOT%" "%NE_ROOT%dist\Riffle\Riffle.exe" %*
+    exit /b 0
+)
+echo Riffle python environment not found. Run setup.ps1 first.
+exit /b 1

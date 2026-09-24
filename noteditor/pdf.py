@@ -1,35 +1,19 @@
-"""PDF 엔진 추상화 계층.
+"""PDF 엔진 접근점.
 
-데스크톱/서버(Windows, Linux, macOS)에서는 ``pymupdf``를 사용하고, Android에서는
-플랫폼 ``PdfRenderer``와 순수 Python ``pypdf``를 조합한 호환 계층을 사용한다.
+모든 모듈은 ``pymupdf`` 를 직접 부르지 않고 이 모듈을 거친다. 한때 Android 용 호환 계층을 갈아 끼우던
+자리였고(2026-09-24 Android 를 걷었다), 지금은 회전된 쪽을 안전하게 배치하는 도우미를 한곳에 둔다.
 """
 from __future__ import annotations
 
-import os
-import sys
-
-_IS_ANDROID = (
-    "ANDROID_BOOTLOGO" in os.environ
-    or "ANDROID_ROOT" in os.environ
-    or "com.chaquo.python" in sys.modules
-    or os.environ.get("NOTEDITOR_PLATFORM") == "android"
-)
-
-if _IS_ANDROID:
-    try:
-        from . import _android_pdf as _backend
-    except ImportError:
-        import pymupdf as _backend
-else:
-    import pymupdf as _backend
+import pymupdf as _backend
 
 open = _backend.open
 Rect = _backend.Rect
 Matrix = _backend.Matrix
-FileDataError = getattr(_backend, "FileDataError", Exception)
-csGRAY = getattr(_backend, "csGRAY", None)
-csRGB = getattr(_backend, "csRGB", None)
-Point = getattr(_backend, "Point", None)
+FileDataError = _backend.FileDataError
+csGRAY = _backend.csGRAY
+csRGB = _backend.csRGB
+Point = _backend.Point
 
 
 def show_pdf_page(page, destination, source, page_index: int) -> None:
@@ -47,9 +31,8 @@ def show_pdf_page(page, destination, source, page_index: int) -> None:
 
 
 def __getattr__(name: str):
-    """지정되지 않은 모든 fitz/pymupdf 속성을 활성 백엔드로 투명하게 전달한다."""
+    """지정되지 않은 모든 pymupdf 속성을 그대로 전달한다."""
     return getattr(_backend, name)
 
 
 __all__ = ["open", "Rect", "Matrix", "Point", "FileDataError", "csGRAY", "csRGB", "show_pdf_page"]
-

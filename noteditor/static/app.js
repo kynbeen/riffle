@@ -20,11 +20,9 @@ const state = {
   previewScrollFrame: 0,
   bridgeReady: false,
   bridgeFailed: false,
-  runtime: window.AndroidBridge
-    ? "android"
-    : (window.location.hash === "#desktop" || !window.location.protocol.startsWith("http")
-      ? "desktop"
-      : "web"),
+  runtime: window.location.hash === "#desktop" || !window.location.protocol.startsWith("http")
+    ? "desktop"
+    : "web",
   handwriting: {
     source_name: null, source_format: null, target_name: null,
     ready: false, inspection: null, plan: [],
@@ -210,76 +208,7 @@ const webApi = {
   }),
 };
 
-function parseAndroidResponse(value) {
-  try {
-    return JSON.parse(value);
-  } catch (_error) {
-    return { ok: false, error: "안드로이드 앱 응답을 읽을 수 없습니다." };
-  }
-}
-
-function callAndroidPython(method, ...args) {
-  return Promise.resolve(parseAndroidResponse(
-    window.AndroidBridge.callPython(method, JSON.stringify(args)),
-  ));
-}
-
-let androidFileOperation = null;
-
-function callAndroidFileOperation(start) {
-  if (androidFileOperation) {
-    return Promise.resolve({ ok: false, error: "열려 있는 파일 선택 또는 저장을 먼저 마쳐 주세요." });
-  }
-  return new Promise((resolve) => {
-    androidFileOperation = resolve;
-    window._androidFileCallback = (value) => {
-      const finish = androidFileOperation;
-      androidFileOperation = null;
-      window._androidFileCallback = null;
-      finish(parseAndroidResponse(value));
-    };
-    try {
-      start();
-    } catch (error) {
-      androidFileOperation = null;
-      window._androidFileCallback = null;
-      resolve({ ok: false, error: error.message || String(error) });
-    }
-  });
-}
-
-const androidApi = window.AndroidBridge ? {
-  health: () => callAndroidPython("health"),
-  log_client_error: (message) => callAndroidPython("log_client_error", message),
-  choose_pdfs: () => callAndroidFileOperation(() => window.AndroidBridge.choosePdfs()),
-  remove_document: (documentId) => callAndroidPython("remove_document", documentId),
-  page_image: (documentId, pageIndex, kind) => callAndroidPython("page_image", documentId, pageIndex, kind),
-  parse_range: (value, pageCount) => callAndroidPython("parse_range", value, pageCount),
-  save_result: (order, suggestedName) => callAndroidFileOperation(
-    () => window.AndroidBridge.saveResult(JSON.stringify(order), suggestedName),
-  ),
-  choose_handwriting_source: () => callAndroidFileOperation(
-    () => window.AndroidBridge.chooseHandwritingSource(),
-  ),
-  choose_handwriting_target: () => callAndroidFileOperation(
-    () => window.AndroidBridge.chooseHandwritingTarget(),
-  ),
-  handwriting_status: () => callAndroidPython("handwriting_status"),
-  retry_handwriting_analysis: () => callAndroidPython("retry_handwriting_analysis"),
-  handwriting_preview: (pageIndex, sourceIndex, nativePageId = "") => callAndroidPython(
-    "handwriting_preview", pageIndex, sourceIndex, nativePageId,
-  ),
-  reset_handwriting_transfer: () => callAndroidPython("reset_handwriting_transfer"),
-  reset_documents: () => callAndroidPython("reset_documents"),
-  save_handwriting_transfer: (suggestedName, pagePlan, allowUnconfirmed = false) => (
-    callAndroidFileOperation(() => window.AndroidBridge.saveHandwriting(
-      suggestedName, JSON.stringify(pagePlan), allowUnconfirmed,
-    ))
-  ),
-} : null;
-
 function requireApi() {
-  if (androidApi) return androidApi;
   const bridge = window.pywebview?.api;
   if (bridge) return bridge;
   if (state.runtime === "web") return webApi;
@@ -1619,7 +1548,7 @@ window.addEventListener("pywebviewready", initializeBridge);
 setBridgeState(false, false);
 showTool("merge");
 renderHandwritingStatus();
-if (window.AndroidBridge || window.pywebview?.api || state.runtime === "web") initializeBridge();
+if (window.pywebview?.api || state.runtime === "web") initializeBridge();
 setTimeout(() => {
   if (!state.bridgeReady) setBridgeState(false, true);
 }, 6000);

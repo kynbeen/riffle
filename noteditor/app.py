@@ -119,24 +119,6 @@ class ComposerApi:
         )
         return {"ok": False, "error": str(exc)}
 
-    def dispatch_call(self, method_name: str, args_json: str = "[]") -> str:
-        """Call a public method by name with JSON args, returning a JSON string."""
-        import json
-        try:
-            method = getattr(self, method_name, None)
-            if not method or method_name.startswith("_"):
-                return json.dumps({"ok": False, "error": f"알 수 없는 메서드: {method_name}"})
-            args = json.loads(args_json) if args_json else []
-            if isinstance(args, list):
-                result = method(*args)
-            elif isinstance(args, dict):
-                result = method(**args)
-            else:
-                result = method(args)
-            return json.dumps(result)
-        except Exception as exc:
-            return json.dumps(self._error(exc))
-
     def health(self) -> dict:
         return self._ok(version=__version__)
 
@@ -591,7 +573,7 @@ class ComposerApi:
             if future is not None:
                 future.cancel()
         if wait_for_analysis and future is not None and not future.cancelled():
-            # Android removes imported copies after this worker has released them.
+            # The session folder is removed next; let the worker release its copies first.
             future.result()
         self._session.close()
 

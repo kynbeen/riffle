@@ -2,7 +2,8 @@
 
 NotEditor는 PDF 문서 합치기와 Samsung Notes·Notewise·Goodnotes 6 필기 옮기기를 한 화면에서
 제공하는 도구입니다.
-Windows 데스크톱 앱, Android 앱과 Docker 기반 웹앱이 같은 PDF·필기 문서 처리 엔진을 사용합니다.
+Windows 데스크톱 앱과 Docker 기반 웹앱이 같은 PDF·필기 문서 처리 엔진을 사용합니다.
+Android 앱은 2026-09-24 사용자 결정으로 걷었습니다(명세 `2026-09-24-01`).
 
 > **처음 쓰시나요?** 설치부터 첫 사용까지 그대로 따라 할 수 있게 정리했습니다 →
 > **[설치와 첫 사용 안내](docs/설치와-첫-사용.md)**
@@ -117,26 +118,6 @@ Sleek 인계(`--open-plan` 합치기·원본 비교)는 2026-09-24 사용자 결
 `F11`로 테두리 없는 전체화면을 켜거나 끌 수 있습니다. 문서 선택과 저장은 기존처럼 로컬 네이티브
 대화상자와 Python 브리지를 사용합니다.
 
-## Android 개발 빌드
-
-Android 7.0(API 24) 이상을 대상으로 합니다. JDK 17과 Android SDK 34를 준비한 뒤 저장소
-루트에서 다음 명령을 실행합니다.
-
-```powershell
-$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
-$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
-cd android
-.\gradlew.bat clean testDebugUnitTest assembleDebug
-```
-
-APK는 `android/app/build/outputs/apk/debug/app-debug.apk`에 만들어집니다. Python 엔진과 UI는
-Gradle이 루트 `noteditor/` 패키지에서 `android/app/build/generated/`로 매번 동기화하므로
-`android/app/src/main`에 사본을 만들지 않습니다. Android는 플랫폼 `PdfRenderer`로 PDF를 읽고
-렌더링하며, `pypdf`로 쪽 복사와 배율·여백 변환을 수행합니다.
-
-컴파일·단위 테스트·APK 조립은 자동 검증하지만 실제 태블릿에서 세 필기 형식의 가져오기와 편집
-왕복은 아직 남아 있습니다. 검증 전에는 원본 문서를 별도로 보관합니다.
-
 ## 로컬 웹 앱 실행
 
 Windows 설치 후 `NotEditor 로컬 웹` 바로가기를 실행하면 배포 서버 대신 사용자 PC 안에서만
@@ -235,9 +216,6 @@ docker run --rm -p 8000:8000 noteditor
 .\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\venv\Scripts\python.exe -m unittest discover -s tests
 node --check noteditor\static\app.js
-$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
-cd android
-.\gradlew.bat testDebugUnitTest assembleDebug
 ```
 
 ## 릴리스 파일 만들기
@@ -277,29 +255,12 @@ $version = .\venv\Scripts\python.exe -m noteditor.stamp_version
 & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" "installer\NotEditor.iss"
 ```
 
-### Android
-
-`.github/workflows/android.yml`은 모든 변경에서 Python 회귀 테스트와 Android 단위 테스트를 실행하고
-debug APK를 Actions 산출물로 남깁니다. `v*` 태그에서는 아래 GitHub Actions secret으로 서명한
-release APK만 GitHub Release에 첨부합니다.
-
-| Secret | 내용 |
-| --- | --- |
-| `ANDROID_KEYSTORE_BASE64` | release keystore 파일의 Base64 문자열 |
-| `ANDROID_KEYSTORE_PASSWORD` | keystore 암호 |
-| `ANDROID_KEY_ALIAS` | 서명 키 별칭 |
-| `ANDROID_KEY_PASSWORD` | 서명 키 암호 |
-
-Android 앱과 내부 Python 엔진도 같은 태그에서 버전을 파생합니다. 서명 secret이 없으면 태그
-워크플로는 release APK를 만들지 않고 명시적으로 실패합니다.
-
 ## 폴더 구조
 
 ```text
 NotEditor/                 Git 저장소 루트
 ├─ noteditor/              import 가능한 Python 애플리케이션 패키지
 │  └─ static/              데스크톱과 웹이 함께 쓰는 UI
-├─ android/                Chaquopy 기반 Android 앱과 Gradle 빌드
 ├─ tests/                  엔진·UI·웹 API 테스트
 ├─ installer/              Windows 설치 프로그램 정의
 ├─ .github/workflows/      테스트 및 Release 자동화

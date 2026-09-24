@@ -66,7 +66,7 @@ class ComposerApiTests(unittest.TestCase):
             time.sleep(0.01)
         self.fail("필기 분석이 끝나지 않았습니다.")
 
-    def test_android_dispatch_selects_analyzes_and_saves_real_handwriting(self):
+    def test_desktop_api_selects_analyzes_and_saves_real_handwriting(self):
         from tests.test_sdocx_transfer import make_sdocx
 
         source = self.root / "annotated.sdocx"
@@ -75,7 +75,8 @@ class ComposerApiTests(unittest.TestCase):
         original = source.read_bytes()
 
         def dispatch(method, *args):
-            return json.loads(self.api.dispatch_call(method, json.dumps(args)))
+            # 화면이 받는 그대로 — JSON 으로 오가도 깨지지 않는지까지 본다.
+            return json.loads(json.dumps(getattr(self.api, method)(*args)))
 
         selected = dispatch("set_handwriting_source_path", str(source))
         self.assertTrue(selected["ok"], selected)
@@ -88,7 +89,7 @@ class ComposerApiTests(unittest.TestCase):
         self.assertTrue(output.is_file())
         self.assertEqual(source.read_bytes(), original)
 
-    def test_android_close_waits_for_analysis_before_removing_session_files(self):
+    def test_close_waits_for_analysis_before_removing_session_files(self):
         future = Future()
         future.set_running_or_notify_cancel()
         self.api._handwriting_future = future
@@ -112,7 +113,7 @@ class ComposerApiTests(unittest.TestCase):
         self.assertFalse(closing.is_alive())
         self.assertFalse(folder.exists())
 
-    def test_android_selection_rejects_invalid_paths_without_losing_selection(self):
+    def test_selection_rejects_invalid_paths_without_losing_selection(self):
         selected = self.api.set_handwriting_target_path(str(self.source))
         self.assertTrue(selected["ok"], selected)
         rejected = self.api.set_handwriting_target_path(str(self.root / "missing.pdf"))

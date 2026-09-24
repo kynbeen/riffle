@@ -353,7 +353,7 @@ class ComposerSession:
         temporary = Path(temporary_name)
 
         if pikepdf is None:
-            # Android 등 pikepdf 부재 환경: MuPDF 백엔드로 고속 병합
+            # pikepdf 가 없는 환경: MuPDF 로 병합
             try:
                 with pymupdf.open() as built:
                     for ref in refs:

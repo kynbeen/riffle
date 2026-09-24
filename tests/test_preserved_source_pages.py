@@ -99,14 +99,14 @@ class PreservedSourcePageTests(unittest.TestCase):
                                      [p.get_pixmap().samples for p in original])
                 self.assertEqual(source.read_bytes(), original_bytes)
 
-    def test_desktop_android_dispatch_preserves_source_only_preview_request(self):
+    def test_desktop_and_web_preserve_source_only_preview_request(self):
         source = self.make_source(".sdocx")
         api = ComposerApi()
         self.addCleanup(api._close, True)
         api._set_handwriting_path("source", source)
         api._set_handwriting_path("target", self.target)
         api._handwriting_future.result(timeout=5)
-        response = json.loads(api.dispatch_call("handwriting_preview", "[-1, 2]"))
+        response = json.loads(json.dumps(api.handwriting_preview(-1, 2)))
         self.assertTrue(response["ok"], response)
         self.assertEqual(response["index"], -1)
         self.assertEqual(response["before"], response["after"])
@@ -150,7 +150,7 @@ class PreservedSourcePageTests(unittest.TestCase):
         api._set_handwriting_path("source", edited)
         api._set_handwriting_path("target", self.target)
         api._handwriting_future.result(timeout=5)
-        response = json.loads(api.dispatch_call("handwriting_preview", json.dumps([-1, -1, UUIDS[4]])))
+        response = json.loads(json.dumps(api.handwriting_preview(-1, -1, UUIDS[4])))
         self.assertTrue(response["ok"], response)
         self.assertEqual(base64.b64decode(response["after"].split(",", 1)[1]), after)
         from fastapi.testclient import TestClient

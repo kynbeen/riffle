@@ -48,9 +48,6 @@ def _panel_lefts(page) -> list[float]:
 
 def original_box(page):
     """Sleek 필기본 쪽이면 원래 쪽 상자(``Rect``), 아니면 ``None``."""
-    # Android 의 PDF 계층에는 이 조회가 없다. 그때는 일반 쪽으로 다룬다.
-    if not hasattr(page, "get_xobjects") or not hasattr(page, "read_contents"):
-        return None
     try:
         if page.rotation:
             return None

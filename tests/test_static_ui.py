@@ -188,14 +188,13 @@ class StaticUiContractTests(unittest.TestCase):
         self.assertIn('window.location.hash === "#desktop"', self.js)
         self.assertIn('callApi("toggle_fullscreen")', self.js)
 
-    def test_android_bridge_maps_python_and_file_operations(self):
-        self.assertIn('runtime: window.AndroidBridge', self.js)
-        self.assertIn('window.AndroidBridge.callPython(method, JSON.stringify(args))', self.js)
-        self.assertIn('window.AndroidBridge.choosePdfs()', self.js)
-        self.assertIn('window.AndroidBridge.saveResult(JSON.stringify(order), suggestedName)', self.js)
-        self.assertIn('window.AndroidBridge.saveHandwriting(', self.js)
-        self.assertIn('if (androidApi) return androidApi', self.js)
-        self.assertIn('if (window.AndroidBridge || window.pywebview?.api', self.js)
+    def test_android_is_gone(self):
+        """Android 는 걷었다(명세 2026-09-24-01 작업 단위 2). 화면은 데스크톱 창과 웹 둘만 안다."""
+        root = Path(__file__).parents[1]
+        self.assertNotIn("AndroidBridge", self.js)
+        self.assertFalse((root / "android").exists())
+        self.assertFalse((root / "noteditor" / "_android_pdf.py").exists())
+        self.assertNotIn("dispatch_call", (root / "noteditor" / "app.py").read_text(encoding="utf-8"))
 
     def test_service_worker_never_caches_api_or_upload_responses(self):
         self.assertIn('"/vendor/sortable-1.15.7.min.js"', self.service_worker)

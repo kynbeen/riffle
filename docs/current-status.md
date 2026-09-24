@@ -8,7 +8,8 @@
 
 ## 현재 구현
 
-- Windows 데스크톱, 로컬 웹, Docker 웹과 Android 프로젝트가 같은 Python 엔진과 UI를 공유한다.
+- Windows 데스크톱, 로컬 웹, Docker 웹이 같은 Python 엔진과 UI를 공유한다. Android 앱은
+  2026-09-24 사용자 결정으로 걷었고, Sleek 인계(합치기·원본 비교)도 같은 날 걷었다(명세 `2026-09-24-01`).
 - PDF 합치기는 문서 추가·쪽 번호 순서를 기본값으로 삼고, 결과 패널에서 선택한 쪽을
   마우스나 터치로 자유롭게 재정렬해 그 순서로 저장한다.
 - Samsung Notes, Notewise, Goodnotes 6 필기 이전은 쪽 추가·삭제, 대상 쪽 수동 재정렬,
@@ -24,19 +25,15 @@
   원본의 저장 중단 검사는 유지한다.
 - 정렬 가로·세로 배율 불일치, 최대 잔차 50mm 초과, 경계 이탈 추정 5mm 이상은 모든 대응 쪽을
   확인 필요로 표시한다. 행 확인 또는 저장 확인창 승인 뒤 저장할 수 있다.
-- Android는 플랫폼 `PdfRenderer`로 읽기·렌더링하고 BSD-3-Clause `pypdf`로 PDF를 조립한다.
-- 배경 배치와 비교 미리보기는 PDF의 CropBox·원점 이동·직각 회전을 유지한다. Android 조립과
-  데스크톱 배치를 원본 렌더링 픽셀에 대조하는 회귀 테스트를 포함한다.
+- 배경 배치와 비교 미리보기는 PDF의 CropBox·원점 이동·직각 회전을 유지한다. 데스크톱 배치를 원본
+  렌더링 픽셀에 대조하는 회귀 테스트를 포함한다.
 - 데스크톱·웹은 PyMuPDF를 유지한다. 개인 사용과 배포의 라이선스 조건은 README에 구분한다.
-- Windows와 Android 버전은 모두 깃 태그 또는 현재 `git describe`에서 파생한다.
+- Windows 버전은 깃 태그 또는 현재 `git describe`에서 파생한다.
 
 ## 자동 검증
 
 - Python 단위·HTTP·정적 UI 테스트
 - JavaScript 구문 검사
-- Android Python 소스·UI 자동 동기화
-- Android Kotlin 컴파일, JVM 단위 테스트와 debug APK clean build
-- 태그 릴리스의 Android release keystore secret 확인과 서명 APK 빌드
 - Edge 1440×1000·390×844에서 실제 파일 선택, 쪽 이동 취소·수락, 확인 상태 초기화와 빈 원본 생략
 - 같은 두 화면 크기에서 저품질 정렬 경고·미확인 저장 차단·취소·명시 승인 다운로드 재검증
 
@@ -45,7 +42,6 @@
 - 실제 태블릿에서 SDOCX·Notewise·Goodnotes 결과 가져오기와 펜·지우개 편집 왕복
 - Goodnotes 다중 페이지·가져온 PDF·스키마 24 실제 샘플
 - Flexcil `.flex`와 편집 가능한 PDF 주석 실제 샘플
-- Android 실제 기기에서 파일 선택, 미리보기, 세 형식 저장의 종단 간 확인
 
 완료되지 않은 실기 검증은 자동 테스트 통과로 대신 닫지 않는다. 입력 원본은 항상 읽기 전용으로
 다루고 결과는 새 파일로 저장한다.

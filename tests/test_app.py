@@ -177,6 +177,22 @@ class ComposerApiTests(unittest.TestCase):
         self.assertIsNotNone(closed.callback)
         closed.callback()
 
+    def test_files_given_at_start_are_handed_to_the_screen_like_dropped_files(self):
+        """`python -m riffle 옛필기.sdocx 새.pdf` — 창에 놓은 것과 똑같이 화면으로 넘긴다."""
+        events = {name: FakeEvent() for name in ("closed", "loaded", "shown", "maximized", "restored")}
+        window = SimpleNamespace(events=SimpleNamespace(**events), evaluate_js=Mock(),
+                                 dom=SimpleNamespace(document=SimpleNamespace(events=SimpleNamespace(drop=FakeEvent()))))
+        webview = SimpleNamespace(create_window=Mock(return_value=window), start=Mock())
+        source, target = self.root / "옛 필기.sdocx", self.root / "새.pdf"
+        with patch.dict(sys.modules, {"webview": webview, "webview.dom": SimpleNamespace(DOMEventHandler=Mock())}), \
+                patch("riffle.app.configure_windows_app_identity"):
+            run(files=[str(source), str(target)])
+            events["loaded"].callback()
+        script = window.evaluate_js.call_args.args[0]
+        self.assertIn("__riffleDropped", script)
+        self.assertIn("옛 필기.sdocx", script)
+        self.assertIn(str(target).replace("\\", "\\\\"), script)
+
     def test_native_objects_are_not_exposed_as_public_api_attributes(self):
         self.assertFalse(hasattr(self.api, "window"))
         self.assertFalse(hasattr(self.api, "session"))

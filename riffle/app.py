@@ -227,7 +227,14 @@ class ComposerApi:
                 progress=lambda stage: self._set_analysis_stage(generation, stage),
             )
             key = self._handwriting_key(source, target)
+            # 파일 이름은 남기지 않는다(필기한 사람 이름이 들어 있다) — 무엇으로 판정했는지와 쪽 수만.
+            logging.getLogger("riffle").info(
+                "Handwriting analysis ready: format=%s notes_mode=%s pages=%s cards_pending=%s",
+                source.suffix.lower(), getattr(inspection, "notes_mode", "") or "-",
+                getattr(inspection, "page_count", "?"), len(getattr(inspection, "crowded_targets", ()) or ()),
+            )
         except Exception as exc:
+            logging.getLogger("riffle").warning("Handwriting analysis failed: %s", exc)
             with self._handwriting_lock:
                 if generation != self._handwriting_generation:
                     return
@@ -704,7 +711,24 @@ def _window_background() -> str:
         return "#ffffff"
 
 
-def run(debug: bool = False) -> None:
+def _hand_over_files(window: Any, files: list[Path]) -> None:
+    """명령줄로 받은 파일을 창에 놓은 것과 똑같이 화면에 넘긴다(`python -m riffle 옛필기.sdocx 새.pdf`).
+
+    화면이 받을 준비(`window.__riffleDropped`)가 될 때까지 기다렸다 넘긴다. 할 일은 화면이 파일 종류로 정한다 — 놓기와
+    같은 규칙(web/src/classify.ts). 탐색기의 「연결 프로그램」, 여러 경우를 한꺼번에 띄워 보는 확인이 이 입구를 쓴다.
+    """
+    import json
+
+    if not files:
+        return
+    payload = json.dumps([{"name": path.name, "path": str(path)} for path in files], ensure_ascii=False)
+    window.evaluate_js(
+        "(function hand(tries) { if (window.__riffleDropped) window.__riffleDropped(" + payload + ");"
+        " else if (tries < 200) setTimeout(function () { hand(tries + 1) }, 100) })(0)"
+    )
+
+
+def run(debug: bool = False, files: list[str | Path] | None = None) -> None:
     configure_windows_app_identity()
     import webview
 
@@ -732,7 +756,13 @@ def run(debug: bool = False) -> None:
     window.events.maximized += lambda: setattr(api, "_maximized", True)
     window.events.restored += lambda: setattr(api, "_maximized", False)
     window.events.shown += lambda: _fit_to_work_area(window)
-    window.events.loaded += lambda: _bind_file_drop(window)
+    given = [Path(item).expanduser().resolve() for item in files or []]
+
+    def on_loaded() -> None:
+        _bind_file_drop(window)
+        _hand_over_files(window, given)
+
+    window.events.loaded += on_loaded
     icon = Path(__file__).parents[1] / "assets" / "icon.ico"
     webview.start(
         debug=debug,

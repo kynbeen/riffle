@@ -11,8 +11,10 @@ def slot(source, target, *, distance=0.02, margin=0.9, confirmed=True):
             "margin": margin, "confirmed": confirmed}
 
 
-def inspection(slots, *, blank=(), panel=(), doubtful=False):
+def inspection(slots, *, blank=(), panel=(), doubtful=False, moved=(), candidates=()):
     return {
+        "moved_sources": list(moved),
+        "pair_candidates": [list(pair) for pair in candidates],
         "plan": {"slots": slots},
         "source_order": [{"source_index": index, "blank": index in blank} for index in range(20)],
         "panel_ink_sources": list(panel),
@@ -44,6 +46,17 @@ class ReviewTests(unittest.TestCase):
         # 합집합 — 새 PDF 에 없는 옛 쪽은 필기가 없어도 결과에 남는다(명세 2026-09-25-01)
         self.assertEqual(summary["result_pages"], 6)
         self.assertEqual(result["blank_sources"], [4])
+
+    def test_reordered_pages_are_counted_not_shown_and_doubtful_ones_carry_a_candidate(self):
+        result = review(inspection([
+            slot(0, 0), slot(2, 1), slot(1, 2),                 # 옛 1쪽이 순서가 바뀌어 새 3쪽에 짝지어짐
+            slot(3, None), slot(None, 3),                       # 닮았지만 애매 — 후보로 함께 보낸다
+        ], moved={1}, candidates={(3, 3)}))
+        self.assertEqual(result["summary"]["moved"], 1)
+        self.assertEqual(result["moved_sources"], [1])
+        self.assertEqual(result["summary"]["automatic"], 3)
+        self.assertEqual(result["items"], [{"slot": 3, "source_index": 3, "target_index": None,
+                                            "reason": "old_only", "candidate": 3}])
 
     def test_panel_ink_wins_over_other_reasons(self):
         result = review(inspection([slot(0, 0, distance=0.9)], panel={0}))

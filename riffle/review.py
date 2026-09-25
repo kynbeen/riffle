@@ -7,6 +7,7 @@
 
 - ``panel_ink``  — 옛 필기본의 오른쪽 필기 칸 위에 손필기가 있다. 칸의 글이 바뀌었을 수 있다.
 - ``old_only``   — 새 PDF 에 짝이 없는 옛 쪽인데 필기가 있다. 필기를 잃지 않게 옛 쪽째 남긴다.
+                   닮았지만 애매한 새 쪽이 있으면 ``candidate`` 로 함께 보낸다(화면이 나란히 보인다, reorder.py).
 - ``different``  — 짝은 지었지만 생김새가 꽤 다르다.
 - ``duplicate``  — 똑같이 생긴 쪽이 떨어진 곳에 또 있어 어느 쪽인지 확신이 없다.
 - ``alignment``  — 쪽 안 내용의 자리가 많이 달라져 필기 위치를 확인해야 한다(문서 전체 판정).
@@ -51,6 +52,7 @@ def review(inspection: dict) -> dict:
              if page.get("blank") and page.get("source_index") is not None}
     alignment = inspection.get("alignment") or {}
     doubtful = bool(alignment.get("requires_confirmation"))
+    candidates = {source: target for source, target in inspection.get("pair_candidates") or []}
 
     items = []
     matched = new_pages = kept_old = kept_blank = 0
@@ -65,12 +67,16 @@ def review(inspection: dict) -> dict:
             kept_blank += source in blank
         reason = _reason(slot, panel, blank, doubtful)
         if reason:
-            items.append({"slot": position, "source_index": source, "target_index": target,
-                          "reason": reason})
+            item = {"slot": position, "source_index": source, "target_index": target, "reason": reason}
+            if reason == "old_only" and source in candidates:
+                item["candidate"] = candidates[source]
+            items.append(item)
     return {
         "items": items,
         # 필기 없는 옛 쪽. 화면에서 짝을 바꿔 밀려난 옛 쪽을 사람에게 보일지(필기 있음) 조용히 남길지(없음) 여기로 안다.
         "blank_sources": sorted(blank),
+        # 순서가 바뀌어 다시 짝지은 옛 쪽. 모든 쪽 보기에서 표시한다.
+        "moved_sources": sorted(inspection.get("moved_sources") or []),
         "summary": {
             "matched": matched,                     # 옛 쪽과 새 쪽을 짝지은 수
             "automatic": matched - sum(1 for item in items if item["target_index"] is not None
@@ -79,6 +85,8 @@ def review(inspection: dict) -> dict:
             "new_pages": new_pages,                 # 새 PDF 에만 있는 쪽 — 필기 없이 들어간다
             "kept_old": kept_old,                   # 새 PDF 에 없어 옛 쪽째 남기는 쪽(필기 없는 쪽 포함)
             "kept_blank": kept_blank,               # 그중 필기가 없는 쪽 — 사람을 부르지 않고 알리기만 한다
+            # 새 판에서 순서가 바뀌어 다시 짝지은 옛 쪽 — 자신 있게 짝지었으니 알리기만 한다(원칙 0)
+            "moved": len(inspection.get("moved_sources") or []),
             "result_pages": matched + new_pages + kept_old,
         },
     }

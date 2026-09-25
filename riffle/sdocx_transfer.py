@@ -543,7 +543,7 @@ def inspect_transfer(
         archive.close()
     panel_ink = _panel_ink_sources(embedded_pdf, page_blobs)
 
-    mode, alignment, page_count, match = plan_transfer(
+    mode, alignment, page_count, match, reorder = plan_transfer(
         embedded_pdf,
         target,
         source_label="SDOCX 내장 PDF",
@@ -563,6 +563,8 @@ def inspect_transfer(
         mode=mode,
         alignment=alignment,
         match=match,
+        moved_sources=reorder.moved,
+        pair_candidates=tuple(sorted(reorder.candidates.items())),
         source_order=tuple(source_order),
         panel_ink_sources=panel_ink,
     )

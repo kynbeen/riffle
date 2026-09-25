@@ -1,9 +1,17 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { reassign, targetOf, type Slot } from './plan.ts'
+import { nearTarget, reassign, targetOf, type Slot } from './plan.ts'
 
 const pair = (source: number | null, target: number | null): Slot => ({ source_index: source, target_index: target })
 const targets = (slots: Slot[]) => slots.map((slot) => slot.target_index).filter((t) => t !== null)
+
+test('다른 쪽 띠는 옛 쪽 자리에서 가장 가까운 새 쪽에서 시작한다', () => {
+  const slots = [pair(0, 0), pair(1, 1), pair(2, null), pair(null, 2), pair(3, 3)]
+  assert.equal(nearTarget(slots, 2), 2)          // 앞뒤가 같은 거리면 뒤쪽 — 실측에서 순서가 바뀐 쪽은 뒤로 갔다
+  assert.equal(nearTarget([pair(0, 0), pair(1, null), pair(2, null), pair(3, 3)], 2), 3)
+  assert.equal(nearTarget([pair(0, null), pair(1, null), pair(null, 5)], 0), 5)
+  assert.equal(nearTarget([pair(0, null)], 0), null)
+})
 
 test('짝을 바꿔도 새 쪽 순서는 그대로다', () => {
   const slots = [pair(0, 0), pair(1, 1), pair(2, 2), pair(3, 3)]

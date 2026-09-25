@@ -79,8 +79,9 @@ def run(page: Page, url: str, source: Path, target: Path) -> None:
     page.get_by_role("dialog").get_by_role("button", name="돌아가기").click()
     check(page.locator(".card-row").count() == 1, "돌아가기를 누르면 정한 것이 그대로다")
 
-    for card in page.locator(".card").all():
-        card.locator(".actions .button:not(.quiet)").click()
+    # 누르면 카드가 한 줄로 접혀 순번이 당겨지므로, 남은 카드의 맨 앞을 누르기를 되풀이한다.
+    while page.locator(".card").count():
+        page.locator(".card").first.locator(".actions .button:not(.quiet)").click()
     page.evaluate("document.querySelector('.stage').scrollTop = 1e6")
     page.get_by_role("button", name="새 파일로 저장").click()
     page.wait_for_selector(".saved", timeout=120_000)

@@ -31,6 +31,7 @@ export interface ReviewItem {
   source_index: number | null
   target_index: number | null
   reason: Reason
+  candidate?: number    // 닮았지만 애매한 새 쪽 — 카드에 나란히 보인다
 }
 
 export interface ReviewSummary {
@@ -41,11 +42,13 @@ export interface ReviewSummary {
   kept_old: number      // 새 PDF 에 없어 옛 쪽째 남기는 쪽(필기 없는 쪽 포함)
   kept_blank: number    // 그중 필기가 없는 쪽
   result_pages: number
+  moved: number         // 새 판에서 순서가 바뀌어 다시 짝지은 옛 쪽
 }
 
 export interface Review {
   items: ReviewItem[]
   blank_sources: number[]
+  moved_sources: number[]
   summary: ReviewSummary
 }
 
@@ -56,9 +59,18 @@ export function headline(summary: ReviewSummary, open: number): string {
   return `${summary.automatic}쪽은 자동으로 맞췄습니다. ${open}쪽만 봐 주세요.`
 }
 
+// 짝 후보 카드 — 새 PDF에 없는 옛 쪽과 닮았지만 확신이 없는 새 쪽을 나란히 보일 때.
+export function candidateWords(target: number): { title: string; detail: string } {
+  return {
+    title: '같은 쪽일까요?',
+    detail: `새 ${target + 1}쪽이 이 쪽과 닮았지만 확신이 없습니다. 같은 쪽이면 필기를 새 ${target + 1}쪽에 얹습니다.`,
+  }
+}
+
 // 헤드라인 아래 작은 글 — 사람이 따로 할 일은 없지만 알아 두면 좋은 것.
 export function footnotes(summary: ReviewSummary): string[] {
   const notes: string[] = []
+  if (summary.moved) notes.push(`새 판에서 순서가 바뀐 ${summary.moved}쪽은 필기를 새 자리로 옮겼습니다.`)
   if (summary.new_pages) notes.push(`새 PDF에서 새로 생긴 ${summary.new_pages}쪽은 필기 없이 들어갑니다.`)
   // 합집합 — 새 판에 없는 옛 쪽은 필기가 없어도 제자리에 남긴다(명세 2026-09-25-01).
   if (summary.kept_blank) notes.push(`새 PDF에 없는 옛 쪽 ${summary.kept_blank}쪽은 필기가 없어도 제자리에 남겼습니다.`)

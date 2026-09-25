@@ -15,7 +15,8 @@ from pathlib import Path
 from collections.abc import Callable, Sequence
 
 from .alignment import Alignment, estimate_alignment, place_page
-from .page_match import MatchResult, match_pages
+from .page_match import MatchResult, fingerprints, match_fingerprints
+from .reorder import Reorder, pair_reordered
 from .page_plan import PagePlan
 
 
@@ -39,6 +40,9 @@ class TransferInspection:
     source_order: tuple[dict, ...] = ()
     # 원본이 Sleek 필기본일 때 오른쪽 필기 칸 위에 손필기가 있는 원본 쪽(0부터)
     panel_ink_sources: tuple[int, ...] = ()
+    # 새 판에서 순서가 바뀌어 다시 짝지은 옛 쪽, 닮았지만 애매해 사람에게 보일 옛 쪽 → 새 쪽(reorder.py)
+    moved_sources: tuple[int, ...] = ()
+    pair_candidates: tuple[tuple[int, int], ...] = ()
 
     def as_dict(self) -> dict:
         plan = None
@@ -73,6 +77,8 @@ class TransferInspection:
             "plan": plan,
             "source_order": list(self.source_order),
             "panel_ink_sources": list(self.panel_ink_sources),
+            "moved_sources": list(self.moved_sources),
+            "pair_candidates": [list(pair) for pair in self.pair_candidates],
         }
 
 
@@ -234,8 +240,11 @@ def plan_transfer(
     source_label: str = "내장 PDF",
     error: type[Exception] = HandwritingTransferError,
     progress: Callable[[str], None] | None = None,
-) -> tuple[str, Alignment | None, int, MatchResult]:
-    """그대로 넣을지(``exact``), 본문 기준으로 다시 앉힐지(``aligned``) 정한다."""
+) -> tuple[str, Alignment | None, int, MatchResult, Reorder]:
+    """그대로 넣을지(``exact``), 본문 기준으로 다시 앉힐지(``aligned``) 정한다.
+
+    짝짓기 뒤에 새 판에서 순서가 바뀐 쪽을 다시 짝짓는다(``reorder.py``). 돌려주는 ``match`` 는 그 결과다.
+    """
     source_document = open_pdf(embedded_pdf, source_label, error=error)
     try:
         target_document = open_pdf(target, "대상 PDF", error=error)
@@ -247,7 +256,11 @@ def plan_transfer(
         target_geometry = geometry(target_document)
         if progress:
             progress("matching")
-        match = match_pages(source_document, target_document)
+        source_prints, target_prints = fingerprints(source_document), fingerprints(target_document)
+        reorder = pair_reordered(match_fingerprints(source_prints, target_prints), source_prints, target_prints)
+        match = reorder.match
+        # 다시 짝지은 쪽이 있으면 쪽 순서가 원본과 엇갈리므로 바이트 그대로 넣을 수 없다.
+        rebuild = bool(match.source_only or match.target_only or reorder.moved)
         matched_indices = [
             (pair.source_index, pair.target_index) for pair in match.matched_pairs
         ]
@@ -272,14 +285,14 @@ def plan_transfer(
                 "페이지 크기가 다른데 두 문서의 본문 영역을 찾지 못해 정렬 배율을 정할 수 없습니다. "
                 "내용이 비어 있거나 스캔 품질이 낮은 문서일 수 있습니다."
             )
-        mode = "rebuild" if match.source_only or match.target_only else "exact"
-        return mode, None, len(target_geometry), match
+        mode = "rebuild" if rebuild else "exact"
+        return mode, None, len(target_geometry), match, reorder
     if same_geometry and not (alignment.improves and alignment.axes_agree):
         # 페이지 크기가 같고 본문 배치도 그대로면 사용자의 PDF를 바이트 그대로 넣는다.
-        mode = "rebuild" if match.source_only or match.target_only else "exact"
-        return mode, None, len(target_geometry), match
-    mode = "rebuild" if match.source_only or match.target_only else "aligned"
-    return mode, alignment, len(target_geometry), match
+        mode = "rebuild" if rebuild else "exact"
+        return mode, None, len(target_geometry), match, reorder
+    mode = "rebuild" if rebuild else "aligned"
+    return mode, alignment, len(target_geometry), match, reorder
 
 
 def alignment_for_plan(

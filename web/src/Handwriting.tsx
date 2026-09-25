@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { backend, type HandwritingStatus, type PlanRow, type PlanSlot, type Preview, type Saved } from './api'
-import { reassign, targetOf, type Slot } from './plan'
-import { footnotes, headline, REASON_WORDS, type Reason, type Review, type ReviewSummary } from './reasons'
+import { nearTarget, reassign, targetOf, type Slot } from './plan'
+import { candidateWords, footnotes, headline, REASON_WORDS, type Reason, type Review, type ReviewSummary } from './reasons'
 import Sheet from './Sheet'
 
 // 필기 옮기기 — 확인할 쪽만(명세 2026-09-24-01). 기계가 자신 있게 맞춘 쪽은 목록에 없고,
@@ -110,6 +110,11 @@ function Ready({ review, initial, source, onUnsaved }: {
   review: Review; initial: PlanSlot[]; source: string; onUnsaved: (unsaved: boolean) => void
 }) {
   const blank = useMemo(() => new Set(review.blank_sources), [review])
+  const moved = useMemo(() => new Set(review.moved_sources ?? []), [review])
+  // 짝 후보 — 새 PDF에 없는 옛 쪽과 닮았지만 확신이 없는 새 쪽(서버 reorder.py). 사람이 정하면 지운다.
+  const [candidates, setCandidates] = useState<Record<number, number>>(() => Object.fromEntries(
+    review.items.filter((item) => item.candidate !== undefined).map((item) => [item.source_index!, item.candidate!])))
+  const dropCandidate = (s: number) => setCandidates((prev) => { const next = { ...prev }; delete next[s]; return next })
   const [slots, setSlots] = useState<Slot[]>(() => initial.map(({ source_index, target_index }) => ({ source_index, target_index })))
   // 확인할 옛 쪽 → 이유. 카드 순서는 order 가 쥔다(짝을 바꾸면 밀려난 옛 쪽이 새 카드로 붙는다).
   const [reasons, setReasons] = useState<Record<number, Reason>>(
@@ -125,6 +130,8 @@ function Ready({ review, initial, source, onUnsaved }: {
   const [error, setError] = useState('')
   const [showAll, setShowAll] = useState(false)
   const thumbnails = useRef(new Map<number, string>())
+  // 카드 미리보기. 접었다 펼칠 때마다 다시 부르지 않는다(처음으로 갈 때 늦게 도착하는 요청도 줄어든다).
+  const previews = useRef(new Map<string, Preview>())
   const targetCount = slots.filter((slot) => slot.target_index !== null).length
 
   const open = order.filter((s) => marks[s] === 'open').length
@@ -135,6 +142,7 @@ function Ready({ review, initial, source, onUnsaved }: {
     setSlots(next)
     setMarks((prev) => ({ ...prev, [s]: 'ok' }))
     setChosen((prev) => new Set(prev).add(s))
+    dropCandidate(s)
     // 밀려난 옛 쪽은 옛 쪽째 남는다(합집합). 필기가 있으면 사람이 보게 한다 — 조용히 다른 새 쪽으로 옮기지 않는다.
     if (displaced !== null && !blank.has(displaced)) {
       setReasons((prev) => ({ ...prev, [displaced]: 'old_only' }))
@@ -190,15 +198,17 @@ function Ready({ review, initial, source, onUnsaved }: {
             return marks[s] !== 'open' && !chosen.has(s)
               ? <CardRow key={s} source={s} target={targetOf(slots, s)} mark={marks[s]} onMark={onMark} />
               : <Card key={s} source={s} target={targetOf(slots, s)} reason={reasons[s]} mark={marks[s]}
-                  chosen={chosen.has(s)} targetCount={targetCount} thumbnails={thumbnails.current}
-                  onMark={onMark} onPick={(target) => pick(s, target)} />
+                  chosen={chosen.has(s)} candidate={candidates[s]} near={candidates[s] ?? nearTarget(slots, s)}
+                  targetCount={targetCount} thumbnails={thumbnails.current} previews={previews.current}
+                  onMark={onMark} onPick={(target) => pick(s, target)}
+                  onReject={() => { dropCandidate(s); onMark('ok') }} />
           })}
         </div>
       )}
 
       <details className="all" open={showAll} onToggle={(event) => setShowAll((event.target as HTMLDetailsElement).open)}>
         <summary className="t-body">모든 쪽 보기 ({slots.length})</summary>
-        {showAll && <AllPages slots={slots} reasons={reasons} marks={marks} blank={blank} chosen={chosen} />}
+        {showAll && <AllPages slots={slots} reasons={reasons} marks={marks} blank={blank} chosen={chosen} moved={moved} />}
       </details>
 
       {error && <div className="message error t-body">{error}</div>}
@@ -238,47 +248,61 @@ function Ready({ review, initial, source, onUnsaved }: {
   )
 }
 
-function Card({ source, target, reason, mark, chosen, targetCount, thumbnails, onMark, onPick }: {
-  source: number; target: number | null; reason: Reason; mark: Mark; chosen: boolean; targetCount: number
-  thumbnails: Map<number, string>; onMark: (mark: Mark) => void; onPick: (target: number) => void
+function Card({ source, target, reason, mark, chosen, candidate, near, targetCount, thumbnails, previews, onMark, onPick, onReject }: {
+  source: number; target: number | null; reason: Reason; mark: Mark; chosen: boolean
+  candidate?: number; near: number | null; targetCount: number
+  thumbnails: Map<number, string>; previews: Map<string, Preview>; onMark: (mark: Mark) => void; onPick: (target: number) => void; onReject: () => void
 }) {
+  // 짝이 없고 후보가 있으면 후보 새 쪽을 옆에 놓는다 — 판단은 그림으로(원칙 2).
+  const asking = target === null && mark === 'open' && candidate !== undefined
+  const shown = target ?? (asking ? candidate! : null)
   // 옛 쪽은 옛 쪽 자체의 틀로(옛 필기 그대로), 새 쪽은 새 틀에 옮긴 필기로 — 필기본처럼 새 쪽이 넓어도
   // 옛 쪽이 작게 쪼그라들지 않는다.
-  const [oldView, setOldView] = useState<Preview | null>(null)
+  const [oldView, setOldView] = useState<Preview | null>(() => previews.get(`-1:${source}`) ?? null)
   const [newView, setNewView] = useState<Preview | null>(null)
+  const load = (targetIndex: number, set: (view: Preview) => void, signal: AbortSignal) => {
+    const key = `${targetIndex}:${source}`
+    const kept = previews.get(key)
+    if (kept) { set(kept); return }
+    backend.preview(targetIndex, source, signal).then((view) => { previews.set(key, view); set(view) })
+      .catch((error: Error) => { if (!signal.aborted) setFailed(error.message) })
+  }
   const [failed, setFailed] = useState('')
   const [picking, setPicking] = useState(false)
   useEffect(() => {
     const stop = new AbortController()
-    backend.preview(-1, source, stop.signal).then(setOldView)
-      .catch((error: Error) => { if (!stop.signal.aborted) setFailed(error.message) })
+    load(-1, setOldView, stop.signal)
     return () => stop.abort()
   }, [source])
   useEffect(() => {
     const stop = new AbortController()
     setNewView(null)
-    if (target !== null) {
-      backend.preview(target, source, stop.signal).then(setNewView)
-        .catch((error: Error) => { if (!stop.signal.aborted) setFailed(error.message) })
-    }
+    if (shown !== null) load(shown, setNewView, stop.signal)
     return () => stop.abort()
-  }, [source, target])
+  }, [source, shown])
   const words = chosen
     ? { title: '직접 고른 짝입니다', detail: '옛 필기를 고르신 새 쪽에 얹습니다. 제자리에 있는지 봐 주세요.' }
-    : REASON_WORDS[reason]
+    : asking ? candidateWords(candidate!) : REASON_WORDS[reason]
   return (
     <article className={`card ${mark}`}>
       <div className="pages">
         <Page label={`옛 ${source + 1}쪽`} background={oldView?.before} ink={oldView?.ink} failed={failed} />
-        {target !== null && (
-          <Page label={`새 ${target + 1}쪽`} background={newView?.after} ink={newView?.ink} failed={failed} />
+        {shown !== null && (
+          <Page label={asking ? `새 ${shown + 1}쪽 · 필기를 얹으면` : `새 ${shown + 1}쪽`}
+            background={newView?.after} ink={newView?.ink} failed={failed} />
         )}
       </div>
       <div className="why">
         <div className="t-body"><b>{words.title}</b></div>
         <div className="t-caption">{words.detail}</div>
         <div className="actions">
-          {mark === 'open' ? (
+          {asking ? (
+            <>
+              <button className="button" onClick={() => onPick(candidate!)}>같은 쪽이에요</button>
+              <button className="button quiet" onClick={onReject}>아니에요</button>
+              <button className="button quiet" onClick={() => setPicking((now) => !now)}>다른 쪽</button>
+            </>
+          ) : mark === 'open' ? (
             <>
               <button className="button" onClick={() => onMark('ok')}>{target === null ? '남기기' : '맞아요'}</button>
               <button className="button quiet" onClick={() => setPicking((now) => !now)}>다른 쪽</button>
@@ -294,7 +318,7 @@ function Card({ source, target, reason, mark, chosen, targetCount, thumbnails, o
         </div>
       </div>
       {picking && (
-        <TargetPicker count={targetCount} current={target} thumbnails={thumbnails}
+        <TargetPicker count={targetCount} current={target} start={target ?? near} thumbnails={thumbnails}
           onPick={(chosenTarget) => { setPicking(false); onPick(chosenTarget) }}
           onClose={() => setPicking(false)} />
       )}
@@ -318,8 +342,8 @@ function CardRow({ source, target, mark, onMark }: {
 }
 
 // 새 PDF 의 쪽을 가로로 펼쳐 하나를 고른다. 쪽 그림은 보일 때만 불러온다.
-function TargetPicker({ count, current, thumbnails, onPick, onClose }: {
-  count: number; current: number | null; thumbnails: Map<number, string>
+function TargetPicker({ count, current, start, thumbnails, onPick, onClose }: {
+  count: number; current: number | null; start: number | null; thumbnails: Map<number, string>
   onPick: (target: number) => void; onClose: () => void
 }) {
   const strip = useRef<HTMLDivElement>(null)
@@ -338,9 +362,10 @@ function TargetPicker({ count, current, thumbnails, onPick, onClose }: {
       }
     }, { root, rootMargin: '0px 400px' })
     root.querySelectorAll('[data-index]').forEach((node) => observer.observe(node))
-    root.querySelector('.current')?.scrollIntoView({ inline: 'center', block: 'nearest' })
+    // 1쪽부터 훑게 하지 않는다 — 지금 짝, 후보, 또는 옛 쪽 자리에서 가장 가까운 새 쪽에서 시작한다.
+    if (start !== null) root.querySelector(`[data-index="${start}"]`)?.scrollIntoView({ inline: 'center', block: 'nearest' })
     return () => { observer.disconnect(); stop.abort() }
-  }, [thumbnails])
+  }, [thumbnails, start])
   return (
     <div className="picker" onKeyDown={(event) => { if (event.key === 'Escape') onClose() }}>
       <div className="picker-head">
@@ -380,8 +405,9 @@ function Page({ label, background, ink, failed }: { label: string; background?: 
   )
 }
 
-function AllPages({ slots, reasons, marks, blank, chosen }: {
+function AllPages({ slots, reasons, marks, blank, chosen, moved }: {
   slots: Slot[]; reasons: Record<number, Reason>; marks: Record<number, Mark>; blank: Set<number>; chosen: Set<number>
+  moved: Set<number>
 }) {
   return (
     <ol className="all-list">
@@ -392,6 +418,7 @@ function AllPages({ slots, reasons, marks, blank, chosen }: {
         let state = '자동'
         if (watched) state = mark === 'excluded' ? '뺌' : chosen.has(s!) ? '직접 고름' : mark === 'ok' ? '확인함' : '볼 쪽'
         else if (s === null) state = '새로 생긴 쪽'
+        else if (moved.has(s) && slot.target_index !== null) state = '자동 · 순서 바뀜'
         else if (slot.target_index === null) state = blank.has(s) ? '옛 쪽째 남김 · 필기 없음' : '옛 쪽째 남김'
         const pair = s !== null && slot.target_index !== null
           ? `옛 ${s + 1}쪽 → 새 ${slot.target_index + 1}쪽`

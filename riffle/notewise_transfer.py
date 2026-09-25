@@ -303,7 +303,7 @@ def inspect_notewise_transfer(
     with _archive_context(source) as (archive, _members, pdf_name, page_names):
         embedded_pdf = archive.read(pdf_name)
         stroke_counts = [_page_stroke_count(archive.read(name)) for name in page_names]
-    mode, alignment, page_count, match = plan_transfer(
+    mode, alignment, page_count, match, reorder = plan_transfer(
         embedded_pdf,
         target,
         source_label="Notewise 내장 PDF",
@@ -322,6 +322,8 @@ def inspect_notewise_transfer(
         mode=mode,
         alignment=alignment,
         match=match,
+        moved_sources=reorder.moved,
+        pair_candidates=tuple(sorted(reorder.candidates.items())),
     )
 
 

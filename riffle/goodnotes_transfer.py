@@ -97,7 +97,7 @@ def inspect_goodnotes_transfer(
         document = read_document(archive, members)
         embedded_pdf = background_pdf(archive, document)
         stroke_counts = _stroke_counts(archive, document)
-    mode, alignment, page_count, match = plan_transfer(
+    mode, alignment, page_count, match, reorder = plan_transfer(
         embedded_pdf,
         target,
         source_label=_SOURCE_LABEL,
@@ -116,6 +116,8 @@ def inspect_goodnotes_transfer(
         mode=mode,
         alignment=alignment,
         match=match,
+        moved_sources=reorder.moved,
+        pair_candidates=tuple(sorted(reorder.candidates.items())),
     )
 
 

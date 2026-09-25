@@ -27,10 +27,23 @@ export function reassign(slots: Slot[], source: number, target: number): Reassig
   next[to].source_index = source
   next[from].source_index = null            // 떠난 자리: 새 쪽만 남거나(필기 없는 새 쪽), 아무것도 안 남는다
   if (displaced !== null) {
-    // 밀려난 옛 쪽은 바로 뒤에 짝 없는 옛 쪽으로 둔다 — 필기가 있으면 옛 쪽째 남기고, 없으면 뺀다.
+    // 밀려난 옛 쪽은 바로 뒤에 짝 없는 옛 쪽으로 둔다 — 필기가 없어도 옛 쪽째 남는다(합집합, 명세 2026-09-25-01).
     next.splice(to + 1, 0, { source_index: displaced, target_index: null })
   }
   return { slots: next.filter((slot) => slot.source_index !== null || slot.target_index !== null), displaced }
+}
+
+// 옛 쪽 자리에서 가장 가까운 새 쪽. `다른 쪽` 띠를 여기서 시작한다 — 1쪽부터 훑게 하지 않는다.
+export function nearTarget(slots: Slot[], source: number): number | null {
+  const at = slots.findIndex((slot) => slot.source_index === source)
+  if (at < 0) return null
+  for (let step = 0; step < slots.length; step += 1) {
+    for (const index of [at + step, at - step]) {
+      const target = slots[index]?.target_index
+      if (target !== undefined && target !== null) return target
+    }
+  }
+  return null
 }
 
 // 옛 쪽 → 지금 짝지어진 새 쪽(없으면 null).

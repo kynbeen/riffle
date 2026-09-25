@@ -287,6 +287,37 @@ class SleekUpdateTests(unittest.TestCase):
             pixels = document[1].get_pixmap(clip=clip, colorspace=pymupdf.csGRAY, dpi=72)
         self.assertGreater(min(pixels.samples), 240)                          # 슬라이드의 빈자리
 
+    def test_a_big_lecture_stroke_spilling_into_the_panel_stays_on_a_plain_page(self):
+        """퍼징(2026-09-26): 가운데는 강의록 안인데 칸까지 크게 삐져나간 획이 칸 없는 새 쪽에서 쪽 밖에 놓였다."""
+        old_pdf = self.root / "old.pdf"
+        notes_pdf(self.slides, old_pdf, {})
+        source = self.root / "old.sdocx"
+        a, b = self.px(300, 100)
+        c, d = self.px(self.width + 200, 300)
+        notes_sdocx(source, old_pdf, {0: [[(a, b), ((a + c) / 2, d), (c, b)]]})
+        output = self.root / "result.sdocx"
+        transfer_handwriting(source, self.slides, output)
+        width, height, strokes = read_ink_strokes(saved_pages(output)[0])
+        self.assertEqual(len(strokes), 1)
+        self.assertTrue(all(-2 <= x <= width + 2 and -2 <= y <= height + 2 for x, y in strokes[0].points))
+
+    def test_dropping_the_last_page_keeps_background_and_pages_in_step(self):
+        """퍼징(2026-09-26): 결과 순서가 새 PDF 와 같은데 맨 뒤 쪽만 빼면, 새 PDF 를 통째로 넣는 지름길이 끼어들어
+        배경 쪽이 하나 남았다(Notewise 는 저장 거절, Samsung Notes 는 안 쓰는 쪽을 남김)."""
+        old_pdf = self.root / "old.pdf"
+        notes_pdf(self.slides, old_pdf, {})
+        source = self.root / "old.sdocx"
+        notes_sdocx(source, old_pdf, {0: [stroke(*self.px(40, 40))]})
+        inspection = inspect_transfer(source, old_pdf)
+        rows = [{"source_index": s.source_index, "target_index": s.target_index, "confirmed": True,
+                 "excluded": s.target_index == 3} for s in inspection.page_plan().slots]
+        plan = PagePlan.from_payload(4, 4, rows, inspection.match)
+        output = self.root / "result.sdocx"
+        transfer_handwriting(source, old_pdf, output, plan_override=plan)
+        with ZipFile(output) as archive, pymupdf.open(stream=archive.read("media/0@source.pdf"), filetype="pdf") as inner:
+            self.assertEqual(inner.page_count, 3)
+        self.assertEqual(len(saved_pages(output)), 3)
+
     def test_handwriting_below_a_grown_page_stays_on_a_page_that_did_not_grow(self):
         """필기가 길어 쪽이 아래로 늘어난 옛 필기본(질문 2026-09-25): 늘어난 아래 칸에 쓴 손필기는, 새 판에서 쪽이
         늘어나지 않았으면 새 쪽의 여백으로 간다 — 쪽 밖으로 떨어지지 않는다."""

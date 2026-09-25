@@ -96,8 +96,8 @@ class _Grid:
     """새 쪽 위의 막힌 칸(여백 밖·글·먼저 놓은 덩이). 사각형 합으로 빈자리를 바로 잰다."""
 
     def __init__(self, width: float, height: float, regions: list[Box], blocked: list[Box]):
-        self.cols = max(1, math.ceil(width / _CELL))
-        self.rows = max(1, math.ceil(height / _CELL))
+        self.cols = max(1, math.floor(width / _CELL))
+        self.rows = max(1, math.floor(height / _CELL))
         cells = [[1] * self.cols for _ in range(self.rows)]
         for rect in regions:
             c0, r0, c1, r1 = self._inner(rect)
@@ -221,6 +221,40 @@ def _free(rect: Box, regions: list[Box], blocked: list[Box]) -> bool:
     )
 
 
+_INSIDE_SLACK = 2.0         # 새 캔버스 px. 이만큼은 쪽 밖으로 나가도 둔다(펜 굵기·반올림)
+_INSIDE_MARGIN = 6.0        # 쪽 안으로 밀어 넣을 때 가장자리에서 띄울 폭(새 캔버스 px)
+
+
+def _keep_inside(per_source: list, contributions: Sequence[Contribution]) -> int:
+    """쪽 밖으로 나가는 객체를 쪽 안으로 최소한만 밀어 넣는다(쪽보다 크면 줄여서). 옮긴 객체 수를 돌려준다.
+
+    가운데가 강의록 영역 안이라 강의록 획으로 옮긴 큰 획이 칸이나 늘어난 아래로 삐져나가 있으면, 칸이 없거나 더 짧은 새 쪽에서
+    그 부분이 쪽 밖에 놓였다 — 보이지도 편집되지도 않는다(퍼징 2026-09-26, 원칙 7). 여백 찾기의 모든 결과에도 마지막으로 건다.
+    """
+    moved = 0
+    for transforms, contribution in zip(per_source, contributions):
+        if transforms is None:
+            continue
+        for index, box in enumerate(contribution.boxes):
+            if box is None:
+                continue
+            transform = transforms[index]
+            width, height = transform.target_width, transform.target_height
+            x0, y0, x1, y1 = transform.rect(box)
+            if x0 >= -_INSIDE_SLACK and y0 >= -_INSIDE_SLACK and x1 <= width + _INSIDE_SLACK and y1 <= height + _INSIDE_SLACK:
+                continue
+            # 가장자리에서 조금 안쪽을 겨눈다 — Samsung Notes 는 점 간격을 1/32px 로 반올림해 적어, 점이 많은 획을 줄이면
+            # 반올림이 쌓여 끝이 몇 px 밀린다(퍼징: 딱 맞춰 넣은 획이 3px 삐져나감).
+            room_x, room_y = width - 2 * _INSIDE_MARGIN, height - 2 * _INSIDE_MARGIN
+            span_x, span_y = max(x1 - x0, 1e-6), max(y1 - y0, 1e-6)
+            scale = min(1.0, room_x / span_x, room_y / span_y)
+            new_x = min(max(x0, _INSIDE_MARGIN), width - _INSIDE_MARGIN - span_x * scale)
+            new_y = min(max(y0, _INSIDE_MARGIN), height - _INSIDE_MARGIN - span_y * scale)
+            transforms[index] = _compose(transform, scale, (x0, y0), (new_x, new_y))
+            moved += 1
+    return moved
+
+
 def _compose(base: CanvasTransform, scale: float, old: tuple[float, float], new: tuple[float, float]) -> CanvasTransform:
     """``base`` 뒤에 (``old`` 를 ``new`` 로 옮기며 ``scale`` 배) 를 잇는다 — 새 캔버스 좌표."""
     return CanvasTransform(
@@ -236,7 +270,8 @@ def _compose(base: CanvasTransform, scale: float, old: tuple[float, float], new:
 def place_ink(target_page, contributions: Sequence[Contribution], *, relocate: bool) -> Placement:
     per_source = [None if c.boxes is None else [c.base] * len(c.boxes) for c in contributions]
     if not relocate or not any(c.boxes is not None and page_layout(c.source_page) is not None for c in contributions):
-        return Placement(per_source)            # 옛 쪽이 필기본이 아니면 칸 손필기가 없다 — 쪽 변환 하나
+        # 옛 쪽이 필기본이 아니면 칸 손필기가 없다 — 쪽 변환 하나. 그래도 쪽 밖으로 나가는 획은 쪽 안으로.
+        return Placement(per_source, moved=_keep_inside(per_source, contributions))
     target = page_layout(target_page)
     width, height = float(target_page.rect.width), float(target_page.rect.height)
     if target is None:
@@ -342,6 +377,7 @@ def place_ink(target_page, contributions: Sequence[Contribution], *, relocate: b
             relocation = _compose(base, scale, (left, top), (spot[0] * tx, spot[1] * ty))
             for index in group:
                 per_source[number][index] = relocation
+    moved += _keep_inside(per_source, contributions)
     return Placement(per_source, crowded, moved, placed)
 
 

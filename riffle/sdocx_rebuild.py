@@ -381,7 +381,9 @@ def rebuild_handwriting(
                         )
                     )
 
-            if all(
+            # 새 PDF 를 바이트째 넣는 지름길은 결과 쪽이 새 PDF 의 모든 쪽을 순서대로 담을 때만 — 맨 뒤 쪽을 뺐으면 쪽 수가 달라진다
+            # (퍼징 2026-09-26: 뒤 쪽을 뺀 저장에서 배경 쪽이 남아 Notewise 가 저장을 거절했고, Samsung Notes 는 안 쓰는 쪽을 남겼다).
+            if len(slots) == target_document.page_count and all(
                 slot.target_index == output_index
                 for output_index, slot in enumerate(slots)
             ):

@@ -28,7 +28,8 @@ REASONS = ("panel_ink", "crowded", "old_only", "different", "duplicate", "alignm
 def _reason(slot: dict, panel: set[int], blank: set[int], alignment_doubtful: bool,
             crowded: set[int] = frozenset()) -> str | None:
     source, target = slot.get("source_index"), slot.get("target_index")
-    if source is not None and source in panel:
+    # 새 쪽에 얹을 때만 칸 손필기를 옮긴다. 새 PDF 에 없어 옛 쪽째 남는 쪽은 칸째 남으니 "새 PDF 에 없는 쪽" 이다(퍼징 2026-09-26).
+    if source is not None and source in panel and target is not None:
         return "panel_ink"
     if target is not None and target in crowded:
         return "crowded"

@@ -138,7 +138,9 @@ def _planned_background_bytes(
     Goodnotes 첨부는 쪽마다 "이 첨부의 몇 쪽"을 가리킨다. 결과에서는 첨부 하나에 쪽을
     결과 순서 그대로 담아, 쪽 번호가 곧 결과 쪽 번호가 되게 한다.
     """
-    if all(
+    # 새 PDF 를 바이트째 넣는 지름길은 결과 쪽이 새 PDF 의 모든 쪽을 순서대로 담을 때만 — 맨 뒤 쪽을 뺐으면 쪽 수가 달라진다
+    # (퍼징 2026-09-26: 뒤 쪽을 뺀 저장에서 배경 쪽이 남아 Notewise 가 저장을 거절했고, Samsung Notes 는 안 쓰는 쪽을 남겼다).
+    if len(plan.slots) == plan.target_count and all(
         slot.target_index == output_index
         for output_index, slot in enumerate(plan.slots)
     ):

@@ -9,7 +9,7 @@ Samsung Notes(SDOCX)든 Notewise든 "문서에 들어 있는 PDF를 새 PDF로 �
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from collections.abc import Callable, Sequence
@@ -44,6 +44,8 @@ class TransferInspection:
     moved_sources: tuple[int, ...] = ()
     pair_candidates: tuple[tuple[int, int], ...] = ()
     closest_targets: tuple[tuple[int, int], ...] = ()     # 짝도 후보도 없는 옛 쪽 → 가장 닮은 새 쪽
+    # 판정에 쓴 옛·새 쪽 지문 — 저장할 때 사례로 남긴다(cases.py). as_dict 에 넣지 않는다(화면 응답이 무거워진다).
+    prints: tuple = field(default=(), repr=False, compare=False)
 
     def as_dict(self) -> dict:
         plan = None

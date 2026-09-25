@@ -1,8 +1,9 @@
-"""순서가 바뀐 쪽 판정을 실제 파일로 흔들어 보는 측정(명세 2026-09-25-01, ``riffle/reorder.py``).
+r"""순서가 바뀐 쪽 판정을 실제 파일로 흔들어 보는 측정(명세 2026-09-25-01, ``riffle/reorder.py``).
 
 사람 파일이 필요해 자동 테스트에는 넣지 않는다. 짝짓기·다시 짝짓기 판정을 바꿀 때 바꾸기 전과 후에 돌려 표를 비교한다.
 
     python tools/check_reorder.py --foreign <다른 강의 PDF> <옛 필기>|<새 PDF> [<옛 필기>|<새 PDF> ...]
+    python tools/check_reorder.py --cases [<사례 폴더>]      # 저장할 때 남긴 사례를 다시 채점(기본 %LOCALAPPDATA%\Riffle\cases)
 
 하는 일: 쌍마다 섞기 전 판정을 정답으로 삼고, 새 PDF 의 쪽 순서를 8가지로 일부러 섞어(이웃 두 쪽 바꿈, 한 쪽 3·10·40칸,
 3·6쪽 묶음 멀리, 4쪽 안 뒤섞기, 옮긴 자리에 딴 쪽) 판정이 정답을 되찾는지 옛 쪽마다 센다. 따로 "쪽이 빠지고 딴 쪽이
@@ -27,6 +28,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from riffle.cases import cases_dir, load_cases, score_case  # noqa: E402
 from riffle.page_match import fingerprints, match_fingerprints  # noqa: E402
 from riffle.reorder import pair_reordered  # noqa: E402
 from riffle.transfer_plan import open_pdf  # noqa: E402
@@ -101,10 +103,15 @@ def apply(order, new, foreign):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--foreign", type=Path, required=True, help="끼워 넣을 다른 강의 PDF")
-    parser.add_argument("pairs", nargs="+", help="<옛 필기>|<새 PDF>")
+    parser.add_argument("--foreign", type=Path, help="끼워 넣을 다른 강의 PDF(쌍을 줄 때 필요)")
+    parser.add_argument("--cases", nargs="?", const="", help="저장할 때 남긴 사례 폴더(값 없이 쓰면 기본 폴더)")
+    parser.add_argument("pairs", nargs="*", help="<옛 필기>|<새 PDF>")
     args = parser.parse_args()
-    foreign = prints_of(args.foreign)
+    if not args.pairs and args.cases is None:
+        parser.error("쌍이나 --cases 중 하나는 있어야 한다")
+    if args.pairs and args.foreign is None:
+        parser.error("쌍을 섞으려면 --foreign 이 필요하다")
+    foreign = prints_of(args.foreign) if args.pairs else []
     silent_total = handed_total = false_total = 0
     for spec in args.pairs:
         source, target = (Path(part) for part in spec.split("|"))
@@ -147,6 +154,21 @@ def main() -> int:
             handed_total += sum(value for key, value in tally.items() if key not in ("맞음", "조용히 틀림"))
         print(f"  엉뚱한 후보: 20번 중 {false_candidates}")
         false_total += false_candidates
+    if args.cases is not None:
+        # 사람이 확정해 저장한 짝이 정답이다. 섞지 않고 그대로 다시 돌린다.
+        folder = Path(args.cases) if args.cases else cases_dir()
+        loaded = load_cases(folder) if folder.is_dir() else []
+        total: Counter = Counter()
+        print(f"== 저장된 사례 {len(loaded)}개 ({folder})")
+        for path, case in loaded:
+            tally = score_case(case, pair_reordered)
+            total.update(tally)
+            others = {key: value for key, value in tally.items() if key != "맞음"}
+            if others:
+                print(f"  {path.name}: 맞음 {tally['맞음']}  그 밖: {others}")
+        print(f"  사례 합계 맞음 {total['맞음']}  그 밖: {({k: v for k, v in total.items() if k != '맞음'}) or '-'}")
+        silent_total += total["조용히 틀림"]
+        handed_total += sum(value for key, value in total.items() if key not in ("맞음", "조용히 틀림"))
     print(f"합계 — 조용히 틀림 {silent_total} · 사람에게 넘김 {handed_total} · 엉뚱한 후보 {false_total}")
     return 1 if silent_total else 0
 

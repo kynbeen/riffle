@@ -43,6 +43,8 @@ class Reorder:
     moved: tuple[int, ...] = ()                                  # 다시 짝지은 옛 쪽(0부터)
     candidates: dict[int, int] = field(default_factory=dict)     # 애매한 옛 쪽 → 가장 닮은 새 쪽
     closest: dict[int, int] = field(default_factory=dict)        # 짝도 후보도 없는 옛 쪽 → 새 PDF 에서 가장 닮은 쪽
+    # 판정에 쓴 옛·새 쪽 지문. 저장할 때 다시 돌려 볼 사례로 남긴다(cases.py) — 화면으로는 보내지 않는다.
+    prints: tuple = field(default=(), repr=False, compare=False)
 
 
 def pair_reordered(
@@ -94,7 +96,8 @@ def pair_reordered(
     for old in result.source_only:
         if old not in candidates and target:
             closest[old] = min(range(len(target)), key=lambda new: (distance(source[old], target[new]), new))
-    return Reorder(result, tuple(sorted(pair.source_index for pair in chosen.values())), candidates, closest)
+    return Reorder(result, tuple(sorted(pair.source_index for pair in chosen.values())), candidates, closest,
+                   (source, target))
 
 
 __all__ = ["Reorder", "pair_reordered"]

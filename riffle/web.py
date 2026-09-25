@@ -22,6 +22,7 @@ from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from . import __version__
+from .cases import record_case
 from .app import MISSING_HANDWRITING_MESSAGE, ComposerApi
 from .handwriting_transfer import (
     SUPPORTED_SUFFIXES,
@@ -448,6 +449,9 @@ def _export_handwriting(api: ComposerApi, payload: HandwritingExportRequest, out
                 f"확인하지 않은 쪽 대응 {len(plan.unconfirmed)}개를 사용자 승인으로 저장했습니다: "
                 + ", ".join(plan.unconfirmed_labels)
             )
+        # 이 PC 의 로컬 웹일 때만 사례를 남긴다. 배포된 웹은 남기지 않는다 — 받는 쪽 동의는 명세 2026-09-25-02 의 일.
+        if os.environ.get("RIFFLE_INSTANCE") == "local-web":
+            record_case(inspection, payload.page_plan, output_suffix(api._handwriting_source))
         return result
     if payload.target_mapping is not None and inspection.mode == "rebuild":
         match = match_from_target_mapping(

@@ -119,6 +119,7 @@ def inspect_goodnotes_transfer(
         moved_sources=reorder.moved,
         pair_candidates=tuple(sorted(reorder.candidates.items())),
         closest_targets=tuple(sorted(reorder.closest.items())),
+        prints=reorder.prints,
     )
 
 

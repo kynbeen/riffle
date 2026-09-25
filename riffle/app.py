@@ -15,6 +15,7 @@ except ImportError:
     pikepdf = None
 
 from . import __version__
+from .cases import record_case
 from .engine import ComposerSession, PdfComposerError
 from .page_plan import PagePlan
 from .ranges import PageRangeError, parse_page_ranges
@@ -494,6 +495,8 @@ class ComposerApi:
                         f"확인하지 않은 쪽 대응 {len(plan.unconfirmed)}개를 사용자 승인으로 저장했습니다: "
                         + ", ".join(plan.unconfirmed_labels)
                     )
+                # 데스크톱 앱 — 이 PC 에 다시 돌려 볼 사례를 남긴다(파일 이름·그림 없음, 실패해도 저장은 성공).
+                record_case(inspection, page_plan, output_suffix(self._handwriting_source))
             elif page_plan is not None and getattr(inspection, "mode", None) == "rebuild":
                 from .page_match import match_from_target_mapping
 

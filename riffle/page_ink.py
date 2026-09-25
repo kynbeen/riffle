@@ -7,8 +7,9 @@
   **여백**으로 옮긴다. 여백 = 강의록 영역 밖에서 Sleek 글과 먼저 자리 잡은 덩이가 없는 곳.
   - 덩이 밑의 글이 옛·새 쪽에서 **같으면** 제자리에 둔다 — 그 글에 친 밑줄·동그라미다.
   - 아니면 원래 자리에 가장 가까운 빈자리로, 모양·크기 그대로. 칸에 있던 덩이는 칸 안에서 먼저 찾는다.
-  - 크기 그대로 들어갈 곳이 없으면 90%부터 50%까지 줄여 본다. 그래도 없으면 겹침이 가장 적은 자리에 두고
-    ``crowded`` 로 알린다 — 화면이 사람에게 보인다(사람을 부르는 경우).
+  - 여백에 자리가 모자라면(90%·80% 로 줄여도) **강의록 영역의 빈칸**으로 옮긴다(사용자 결정 2026-09-25). 빈칸은 쪽을
+    그려 바탕색과 다른 칸(글·그림·도형)을 피하고, 이 쪽에 얹히는 강의록 손필기도 피한다. 그래도 없으면 여백·강의록 빈칸을
+    50% 까지 줄여 찾고, 끝내 없으면 겹침이 가장 적은 자리에 두고 ``crowded`` 로 알린다(사람을 부르는 경우).
 
 같은 입력이면 늘 같은 답이다 — 미리보기와 저장이 이 함수 하나를 쓴다(원칙 5).
 """
@@ -177,6 +178,41 @@ def _regions(layout: NotesPage, width: float, height: float) -> tuple[list[Box],
     return panel, panel + below
 
 
+_PAINT_TOLERANCE = 14      # 바탕색과 이만큼 넘게 다르면 무언가 그려진 칸
+
+
+def _painted(page, box) -> list[Box]:
+    """강의록 영역에서 그림·글·도형이 있는 칸(쪽 좌표). 쪽을 격자 한 칸에 두 픽셀로 그려, 바탕색(가장 흔한 밝기)과
+    다른 픽셀이 하나라도 있는 칸을 막는다. 글 줄만 보면 슬라이드의 그림 위에 손필기를 얹게 된다."""
+    from . import pdf as pymupdf
+
+    scale = 2.0 / _CELL
+    pixmap = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), clip=box, colorspace=pymupdf.csGRAY, alpha=False)
+    width, height, samples = pixmap.width, pixmap.height, pixmap.samples
+    if width < 2 or height < 2:
+        return [tuple(box)]
+    counts = [0] * 256
+    for value in samples:
+        counts[value] += 1
+    background = max(range(256), key=counts.__getitem__)
+    ink = bytes(1 if abs(value - background) > _PAINT_TOLERANCE else 0 for value in range(256))
+    marked = samples.translate(ink)
+    cols, rows = (width + 1) // 2, (height + 1) // 2
+    rects: list[Box] = []
+    for row in range(rows):
+        lines = [marked[y * width:(y + 1) * width] for y in (2 * row, 2 * row + 1) if y < height]
+        start = None
+        for column in range(cols + 1):
+            busy = column < cols and any(line[2 * column:2 * column + 2].find(1) >= 0 for line in lines)
+            if busy and start is None:
+                start = column
+            elif not busy and start is not None:
+                rects.append((box.x0 + start * _CELL, box.y0 + row * _CELL,
+                              box.x0 + column * _CELL, box.y0 + (row + 1) * _CELL))
+                start = None
+    return rects
+
+
 def _free(rect: Box, regions: list[Box], blocked: list[Box]) -> bool:
     """``rect`` 가 여백 조각 하나 안에 들어가고 막힌 곳과 겹치지 않는가 — 격자 없이 정확히."""
     inside = any(r[0] <= rect[0] and r[1] <= rect[1] and rect[2] <= r[2] and rect[3] <= r[3] for r in regions)
@@ -211,6 +247,10 @@ def place_ink(target_page, contributions: Sequence[Contribution], *, relocate: b
     crowded = False
     moved = 0
 
+    # 첫 걸음 — 옛 쪽마다 획을 강의록 영역 것과 칸 것으로 가른다. 강의록 영역 획은 새 쪽 어디에 얹히는지도 적어 둔다:
+    # 칸 획을 강의록 영역의 빈칸으로 옮길 때 그 위를 덮지 않게.
+    sorted_out = []
+    lecture_ink: list[Box] = []
     for number, contribution in enumerate(contributions):
         source = page_layout(contribution.source_page)
         if source is None or contribution.boxes is None:
@@ -219,8 +259,7 @@ def place_ink(target_page, contributions: Sequence[Contribution], *, relocate: b
         page_h = max(float(contribution.source_page.rect.height), 1e-6)
         sx, sy = contribution.canvas[0] / page_w, contribution.canvas[1] / page_h
         base = contribution.base
-        tx = base.target_width / width
-        ty = base.target_height / height
+        tx, ty = base.target_width / width, base.target_height / height
         margin: list[tuple[int, Box]] = []
         for index, box in enumerate(contribution.boxes):
             if box is None:
@@ -230,6 +269,15 @@ def place_ink(target_page, contributions: Sequence[Contribution], *, relocate: b
             lecture = source.lecture
             if lecture is None or cx > lecture.x1 + _EDGE_SLACK or cy > lecture.y1 + _EDGE_SLACK:
                 margin.append((index, points))
+            else:
+                x0, y0, x1, y1 = base.rect(box)
+                lecture_ink.append((x0 / tx, y0 / ty, x1 / tx, y1 / ty))
+        sorted_out.append((number, contribution, source, tx, ty, margin))
+
+    lecture_blank: list[Box] | None = None      # 강의록 영역에서 그림·글이 있는 칸 — 필요할 때 한 번만 그린다
+
+    for number, contribution, source, tx, ty, margin in sorted_out:
+        base = contribution.base
         for group in _clusters(margin):
             old_pts = _union([pt for index, pt in margin if index in group])
             canvas_box = _union([contribution.boxes[index] for index in group])
@@ -246,11 +294,29 @@ def place_ink(target_page, contributions: Sequence[Contribution], *, relocate: b
             if _free(here, panel_only if in_panel else anywhere, blocked):
                 placed.append(here)          # 원래 자리가 이미 비어 있다 — 격자로 반올림하지 않고 제자리
                 continue
+            # 찾는 차례(사용자 결정 2026-09-25): 여백(칸 먼저) 크기 그대로·조금 줄여서 → 강의록 영역의 빈칸 크기 그대로·조금
+            # 줄여서 → 둘 다 50% 까지. 크게 줄이기보다 강의록 빈칸이 낫다 — 손필기는 읽혀야 한다.
+            margins = [panel_only, anywhere] if in_panel else [anywhere]
             spot, scale = None, 1.0
-            for regions in ([panel_only, anywhere] if in_panel else [anywhere]):
-                grid = _Grid(width, height, regions, blocked)
-                for scale in _SCALES:
-                    spot = grid.find(size[0] * scale, size[1] * scale, (here[0], here[1]))
+            for kind, scales in (("margin", _SCALES[:3]), ("lecture", _SCALES[:3]),
+                                 ("margin", _SCALES[3:]), ("lecture", _SCALES[3:])):
+                if kind == "lecture":
+                    if target.lecture is None:
+                        continue
+                    if lecture_blank is None:
+                        lecture_blank = _painted(target_page, target.lecture)
+                    inset = (target.lecture.x0 + _TEXT_PAD, target.lecture.y0 + _TEXT_PAD,
+                             target.lecture.x1 - _TEXT_PAD, target.lecture.y1 - _TEXT_PAD)
+                    ink = [(b[0] - _PLACED_PAD, b[1] - _PLACED_PAD, b[2] + _PLACED_PAD, b[3] + _PLACED_PAD)
+                           for b in lecture_ink]
+                    grids = [_Grid(width, height, [inset], blocked + lecture_blank + ink)]
+                else:
+                    grids = [_Grid(width, height, regions, blocked) for regions in margins]
+                for grid in grids:
+                    for scale in scales:
+                        spot = grid.find(size[0] * scale, size[1] * scale, (here[0], here[1]))
+                        if spot is not None:
+                            break
                     if spot is not None:
                         break
                 if spot is not None:

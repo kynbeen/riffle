@@ -33,9 +33,11 @@ CANVAS_WIDTH = 1848
 
 
 def notes_pdf(slides: Path, output: Path, copies: dict[int, int], texts: dict[tuple[int, int], str] | None = None,
-              front: bool = False) -> list[int]:
-    """Sleek 배치의 필기본. ``copies[i]`` 번 같은 강의록 쪽을 이어 싣는다. 돌려주는 것: 쪽마다 강의록 쪽 번호."""
+              front: bool = False, heights: dict[tuple[int, int], float] | None = None) -> list[int]:
+    """Sleek 배치의 필기본. ``copies[i]`` 번 같은 강의록 쪽을 이어 싣는다. ``heights`` 쪽은 아래로 늘어난다(Sleek 처럼
+    강의록 쪽 자리는 그대로). 돌려주는 것: 쪽마다 강의록 쪽 번호."""
     texts = texts or {}
+    heights = heights or {}
     origins = []
     with pymupdf.open(slides) as original, pymupdf.open() as document:
         def panel(page, left: float, text: str) -> None:
@@ -57,7 +59,7 @@ def notes_pdf(slides: Path, output: Path, copies: dict[int, int], texts: dict[tu
         for index in range(original.page_count):
             rect = original[index].rect
             for part in range(copies.get(index, 1)):
-                page = document.new_page(width=rect.width + PANEL, height=rect.height)
+                page = document.new_page(width=rect.width + PANEL, height=heights.get((index, part), rect.height))
                 page.show_pdf_page(pymupdf.Rect(0, 0, rect.width, rect.height), original, index)
                 panel(page, rect.width, texts.get((index, part), f"note {index + 1} part {part + 1}\nsecond line"))
                 origins.append(index)
@@ -69,8 +71,9 @@ def stroke_object(points: list[tuple[float, float]]) -> bytes:
     geometry = bytearray(struct.pack("<dd", *points[0]))
     for (left_x, left_y), (right_x, right_y) in zip(points, points[1:]):
         geometry += struct.pack("<HH", _delta(right_x - left_x), _delta(right_y - left_y))
-    geometry += struct.pack("<fHH", 1.0, 0, 0)
-    geometry += struct.pack("<iHH", 0, 1, 1)
+    steps = len(points) - 1
+    geometry += struct.pack(f"<f{steps}H", 1.0, *([0] * steps))            # 압력: 첫 값 + 점마다 차이
+    geometry += struct.pack(f"<i{steps}H", 0, *([1] * steps))              # 시각: 첫 값 + 점마다 차이
     geometry += struct.pack("<H", 0)
     prefix_size = 6 + 4 + 1 + 1 + 1 + 2
     subrecord_size = prefix_size + len(geometry)
@@ -227,6 +230,61 @@ class SleekUpdateTests(unittest.TestCase):
         # 미리보기도 같은 길 — 저장한 것과 같은 필기를 그린다.
         _before, _after, _ink, count = preview_transfer(source, new_pdf, 2, inspection)
         self.assertEqual(count, 2)
+
+    def test_full_panel_sends_handwriting_to_blank_lecture_space(self):
+        """칸이 새 글로 꽉 차면 강의록 영역의 빈칸으로 옮긴다 — 그림·글·다른 손필기 위는 피한다(사용자 결정 2026-09-25)."""
+        old_pdf, new_pdf = self.root / "old.pdf", self.root / "new.pdf"
+        notes_pdf(self.slides, old_pdf, {})
+        full = "\n".join("filled panel line with many words to the edge " * 2 for _ in range(40))
+        notes_pdf(self.slides, new_pdf, {}, texts={(2, 0): full})
+        source = self.root / "old.sdocx"
+        left = self.width + 60
+        x, y = self.px(left, 62)
+        # 두 줄 높이(약 40pt)의 손글씨 — 칸 위쪽 여백(27pt)에도, 글 줄 사이에도 들어가지 않는다.
+        word = [(x, y), (x + 20, y + 70), (x + 40, y), (x + 60, y + 70)]
+        notes_sdocx(source, old_pdf, {2: [word, stroke(*self.px(40, 40))]})
+        inspection = inspect_transfer(source, new_pdf)
+        self.assertEqual(inspection.crowded_targets, ())                    # 사람을 부르지 않는다
+        self.assertEqual(inspection.relocated_targets, (2,))
+        output = self.root / "result.sdocx"
+        transfer_handwriting(source, new_pdf, output)
+        strokes = read_ink_strokes(saved_pages(output)[2])[2]
+        moved = [s for s in strokes if s.points[0] != self.px(40, 40)]
+        self.assertEqual(len(moved), 1)
+        points = [(x / self.density, y / self.density) for x, y in moved[0].points]
+        box = (min(p[0] for p in points), min(p[1] for p in points), max(p[0] for p in points), max(p[1] for p in points))
+        with pymupdf.open(new_pdf) as document:
+            lecture = page_layout(document[2]).lecture
+            self.assertLessEqual(box[2], lecture.x1)                        # 강의록 영역 안으로
+            clip = pymupdf.Rect(*box)
+            pixels = document[2].get_pixmap(clip=clip, colorspace=pymupdf.csGRAY, dpi=72)
+        self.assertGreater(min(pixels.samples), 240)                        # 그 자리는 비어 있었다
+        near = self.px(40, 40)
+        self.assertFalse(box[0] < near[0] / self.density + 40 and near[0] / self.density < box[2]
+                         and box[1] < near[1] / self.density + 4 and near[1] / self.density < box[3])
+
+    def test_handwriting_below_a_grown_page_stays_on_a_page_that_did_not_grow(self):
+        """필기가 길어 쪽이 아래로 늘어난 옛 필기본(질문 2026-09-25): 늘어난 아래 칸에 쓴 손필기는, 새 판에서 쪽이
+        늘어나지 않았으면 새 쪽의 여백으로 간다 — 쪽 밖으로 떨어지지 않는다."""
+        old_pdf, new_pdf = self.root / "old.pdf", self.root / "new.pdf"
+        with pymupdf.open(self.slides) as slides:
+            tall = slides[0].rect.height * 1.4
+        notes_pdf(self.slides, old_pdf, {}, heights={(1, 0): tall})
+        notes_pdf(self.slides, new_pdf, {})
+        with pymupdf.open(old_pdf) as document:
+            self.assertIsNotNone(page_layout(document[1]).lecture)          # 늘어나도 필기본 쪽으로 안다
+            below = document[1].rect.height - 30
+        source = self.root / "old.sdocx"
+        notes_sdocx(source, old_pdf, {1: [stroke(*self.px(40, below))]})
+        inspection = inspect_transfer(source, new_pdf)
+        self.assertEqual(inspection.page_count, 4)
+        self.assertEqual(inspection.relocated_targets, (1,))
+        output = self.root / "result.sdocx"
+        transfer_handwriting(source, new_pdf, output)
+        page = saved_pages(output)[1]
+        _width, canvas_height, strokes = read_ink_strokes(page)
+        self.assertEqual(len(strokes), 1)
+        self.assertTrue(all(0 <= y <= canvas_height for _x, y in strokes[0].points))
 
     def test_panel_handwriting_stays_when_the_notes_are_the_same(self):
         notes = self.root / "notes.pdf"

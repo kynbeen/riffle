@@ -478,7 +478,7 @@ def preview_slot(
             width, height = image.size
         payload, _placement = compose_slot_ink(
             ink, source_document, target_document, target_index, sources, alignment,
-            relocate=inspection.notes_mode == NOTES,
+            relocate=True,
         )
         if payload is None:
             layer, count = render_ink(None, width, height, (1.0, 1.0))

@@ -235,14 +235,21 @@ def _compose(base: CanvasTransform, scale: float, old: tuple[float, float], new:
 
 def place_ink(target_page, contributions: Sequence[Contribution], *, relocate: bool) -> Placement:
     per_source = [None if c.boxes is None else [c.base] * len(c.boxes) for c in contributions]
-    target = page_layout(target_page) if relocate else None
-    if target is None:
-        return Placement(per_source)
-
+    if not relocate or not any(c.boxes is not None and page_layout(c.source_page) is not None for c in contributions):
+        return Placement(per_source)            # 옛 쪽이 필기본이 아니면 칸 손필기가 없다 — 쪽 변환 하나
+    target = page_layout(target_page)
     width, height = float(target_page.rect.width), float(target_page.rect.height)
-    panel_only, anywhere = _regions(target, width, height)
-    text = [(x0 - _TEXT_PAD, y0 - _TEXT_PAD, x1 + _TEXT_PAD, y1 + _TEXT_PAD)
-            for x0, y0, x1, y1 in panel_text_boxes(target_page, target)]
+    if target is None:
+        # 새 쪽에 필기 칸이 없다(필기본 → 일반 PDF). 칸 손필기를 그대로 옮기면 쪽 밖에 놓여 보이지도 편집되지도 않는다
+        # (2026-09-26 사용자 발견). 쪽 전체를 강의록 영역으로 보고 그 빈자리로 옮긴다 — 사람에게는 칸 손필기 카드로 묻는다.
+        from . import pdf as pymupdf
+
+        target = NotesPage(pymupdf.Rect(0, 0, width, height), width)
+        panel_only, anywhere, text = [], [], []
+    else:
+        panel_only, anywhere = _regions(target, width, height)
+        text = [(x0 - _TEXT_PAD, y0 - _TEXT_PAD, x1 + _TEXT_PAD, y1 + _TEXT_PAD)
+                for x0, y0, x1, y1 in panel_text_boxes(target_page, target)]
     placed: list[Box] = []
     crowded = False
     moved = 0
@@ -296,7 +303,7 @@ def place_ink(target_page, contributions: Sequence[Contribution], *, relocate: b
                 continue
             # 찾는 차례(사용자 결정 2026-09-25): 여백(칸 먼저) 크기 그대로·조금 줄여서 → 강의록 영역의 빈칸 크기 그대로·조금
             # 줄여서 → 둘 다 50% 까지. 크게 줄이기보다 강의록 빈칸이 낫다 — 손필기는 읽혀야 한다.
-            margins = [panel_only, anywhere] if in_panel else [anywhere]
+            margins = [regions for regions in ([panel_only, anywhere] if in_panel else [anywhere]) if regions]
             spot, scale = None, 1.0
             for kind, scales in (("margin", _SCALES[:3]), ("lecture", _SCALES[:3]),
                                  ("margin", _SCALES[3:]), ("lecture", _SCALES[3:])):
@@ -324,7 +331,8 @@ def place_ink(target_page, contributions: Sequence[Contribution], *, relocate: b
             if spot is None:
                 crowded = True
                 scale = _SCALES[-1]
-                spot = _Grid(width, height, anywhere, blocked).find(
+                last_resort = anywhere or [(0.0, 0.0, width, height)]      # 칸 없는 쪽이면 쪽 전체에서
+                spot = _Grid(width, height, last_resort, blocked).find(
                     size[0] * scale, size[1] * scale, (here[0], here[1]), overlap=True) or (here[0], here[1])
             new_box = (spot[0], spot[1], spot[0] + size[0] * scale, spot[1] + size[1] * scale)
             placed.append(new_box)

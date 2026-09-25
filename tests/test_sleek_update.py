@@ -263,6 +263,30 @@ class SleekUpdateTests(unittest.TestCase):
         self.assertFalse(box[0] < near[0] / self.density + 40 and near[0] / self.density < box[2]
                          and box[1] < near[1] / self.density + 4 and near[1] / self.density < box[3])
 
+    def test_panel_handwriting_lands_inside_a_plain_new_page(self):
+        """필기본 → 일반 PDF(2026-09-26 사용자 발견): 새 쪽에 칸이 없으면 칸 손필기를 그대로 옮겨 쪽 밖에 놓이던 것.
+        새 쪽의 빈자리로 옮기고, 사람에게는 칸 손필기 카드로 묻는다."""
+        old_pdf = self.root / "old.pdf"
+        notes_pdf(self.slides, old_pdf, {})
+        source = self.root / "old.sdocx"
+        x, y = self.px(self.width + 60, 100)
+        notes_sdocx(source, old_pdf, {1: [[(x, y), (x + 20, y + 40), (x + 40, y), (x + 60, y + 40)]]})
+        inspection = inspect_transfer(source, self.slides)
+        self.assertEqual(inspection.panel_ink_sources, (1,))                 # 여전히 묻는다
+        output = self.root / "result.sdocx"
+        transfer_handwriting(source, self.slides, output)
+        blob = saved_pages(output)[1]
+        width, height, strokes = read_ink_strokes(blob)
+        self.assertEqual(len(strokes), 1)
+        self.assertTrue(all(0 <= px <= width and 0 <= py <= height for px, py in strokes[0].points))
+        scale = width / self.width
+        points = [(px / scale, py / scale) for px, py in strokes[0].points]
+        clip = pymupdf.Rect(min(p[0] for p in points), min(p[1] for p in points),
+                            max(p[0] for p in points), max(p[1] for p in points))
+        with pymupdf.open(self.slides) as document:
+            pixels = document[1].get_pixmap(clip=clip, colorspace=pymupdf.csGRAY, dpi=72)
+        self.assertGreater(min(pixels.samples), 240)                          # 슬라이드의 빈자리
+
     def test_handwriting_below_a_grown_page_stays_on_a_page_that_did_not_grow(self):
         """필기가 길어 쪽이 아래로 늘어난 옛 필기본(질문 2026-09-25): 늘어난 아래 칸에 쓴 손필기는, 새 판에서 쪽이
         늘어나지 않았으면 새 쪽의 여백으로 간다 — 쪽 밖으로 떨어지지 않는다."""

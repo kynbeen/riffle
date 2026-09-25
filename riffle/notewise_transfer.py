@@ -515,7 +515,7 @@ def transfer_notewise_handwriting(
         plan = PagePlan.from_match(match_override, inspection.source_page_count, inspection.page_count)
     else:
         plan = inspection.page_plan()
-    relocate = inspection.notes_mode == "notes"
+    relocate = True     # 칸 손필기는 옛 쪽이 필기본일 때만 옮긴다(page_ink)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(

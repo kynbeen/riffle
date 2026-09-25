@@ -199,7 +199,7 @@ def rebuild_handwriting(
     excluded_sources: Sequence[int] = (),
     excluded_targets: Sequence[int] = (),
     now_us: int | None = None,
-    relocate: bool = False,
+    relocate: bool = True,
 ) -> dict:
     """``match`` 순서대로 PDF와 페이지 목록을 재조립해 새 SDOCX를 저장한다.
 

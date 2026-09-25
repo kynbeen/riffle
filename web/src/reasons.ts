@@ -4,8 +4,8 @@ export type Reason = 'panel_ink' | 'crowded' | 'old_only' | 'different' | 'dupli
 
 export const REASON_WORDS: Record<Reason, { title: string; detail: string }> = {
   panel_ink: {
-    title: '손필기가 필기 칸 위에 있습니다',
-    detail: '필기본을 다시 만들며 칸의 글이 바뀌었을 수 있습니다. 손필기가 엉뚱한 글 위에 얹히지 않았는지 봐 주세요.',
+    title: '필기 칸에 쓴 손필기를 옮겼습니다',
+    detail: '새 PDF에는 필기 칸이 없어, 칸에 쓴 손필기를 새 쪽의 빈자리로 옮겼습니다. 알아볼 수 있는 자리인지 봐 주세요.',
   },
   crowded: {
     title: '필기 칸에 빈자리가 모자랐습니다',

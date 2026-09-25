@@ -764,7 +764,7 @@ def transfer_handwriting(
             selected,
             mode=inspection.mode,
             now_us=now_us,
-            relocate=inspection.notes_mode == "notes",
+            relocate=True,
         )
 
     archive, members, media_info_name, media_info, pdf_entry, embedded_name = _archive_context(source)

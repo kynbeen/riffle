@@ -14,6 +14,7 @@ from zipfile import ZipFile
 from .alignment import Alignment, estimate_alignment
 from .ink_transform import canvas_transform
 from .page_match import MatchResult
+from .page_plan import PagePlan
 from .sdocx_note import PageOrder, PageOrderEntry, patch_note_height, read_note, read_page_order
 from .sdocx_page import PageInfo, is_blank_page, patch_page, read_page
 from .sdocx_ink import transform_page_ink
@@ -101,6 +102,8 @@ def _same_page_geometry(left, right) -> bool:
 
 
 def _choose_alignment(source_document, target_document, result: MatchResult) -> Alignment | None:
+    from .transfer_plan import _alignment_pairs
+
     pairs = [
         (pair.source_index, pair.target_index)
         for pair in result.matched_pairs
@@ -109,7 +112,9 @@ def _choose_alignment(source_document, target_document, result: MatchResult) -> 
         _same_page_geometry(source_document[source], target_document[target])
         for source, target in pairs
     )
-    alignment = estimate_alignment(source_document, target_document, pairs)
+    alignment = estimate_alignment(
+        source_document, target_document, _alignment_pairs(source_document, target_document, pairs)
+    )
     if alignment is None:
         if not same_geometry:
             raise SdocxRebuildError(
@@ -158,6 +163,16 @@ def _read_source_pages(
     return order, pdf_pages, supplemental, template
 
 
+@dataclass(frozen=True)
+class _Row:
+    source_index: int | None
+    target_index: int | None
+
+    @property
+    def matched(self) -> bool:
+        return self.source_index is not None and self.target_index is not None
+
+
 def _new_uuid(existing: set[str], factory: Callable[[], str]) -> str:
     for _ in range(100):
         candidate = str(factory()).lower()
@@ -171,7 +186,7 @@ def rebuild_handwriting(
     source_sdocx: str | Path,
     target_pdf: str | Path,
     output_sdocx: str | Path,
-    match: MatchResult,
+    match: MatchResult | PagePlan,
     *,
     uuid_factory: Callable[[], str] | None = None,
     hash_factory: Callable[[int], bytes] | None = None,
@@ -179,8 +194,26 @@ def rebuild_handwriting(
     excluded_sources: Sequence[int] = (),
     excluded_targets: Sequence[int] = (),
     now_us: int | None = None,
+    relocate: bool = False,
 ) -> dict:
-    """``match`` 순서대로 PDF와 페이지 목록을 재조립해 새 SDOCX를 저장한다."""
+    """``match`` 순서대로 PDF와 페이지 목록을 재조립해 새 SDOCX를 저장한다.
+
+    ``match`` 가 쪽 계획(``PagePlan``)이면 줄마다 함께 얹는 옛 쪽(``merged``)의 필기도 새 쪽에 합친다 — Sleek
+    필기본의 반복 수가 줄어 옛 쪽 여럿이 새 쪽 하나로 모이는 경우(명세 2026-09-25-03). ``relocate`` 면 필기본 칸의
+    손필기를 새 쪽의 여백으로 옮긴다. 필기 바이트는 공통 층(``transfer_plan.compose_slot_ink``)이 만든다 —
+    미리보기와 같은 길이다.
+    """
+    from .sdocx_transfer import source_ink
+    from .transfer_plan import compose_slot_ink
+
+    if isinstance(match, PagePlan):
+        plan = match
+        excluded_sources, excluded_targets = plan.excluded_sources, plan.excluded_targets
+        rows = [(slot.source_index, slot.target_index, slot.merged) for slot in plan.slots]
+        match = plan.to_match_result()
+    else:
+        rows = [(pair.source_index, pair.target_index, ()) for pair in match.pairs]
+    merged_sources = [source for _s, _t, extra in rows for source in extra]
     from . import pdf as pymupdf
 
     now_us = _now_us() if now_us is None else now_us
@@ -214,7 +247,7 @@ def rebuild_handwriting(
                 match,
                 source_document.page_count,
                 target_document.page_count,
-                excluded_sources,
+                [*excluded_sources, *merged_sources],
                 excluded_targets,
             )
             order, source_pages, supplemental, blank_template = _read_source_pages(
@@ -238,32 +271,42 @@ def rebuild_handwriting(
             slots: list[_PdfSlot] = []
             additions: dict[str, ArchiveAddition] = {}
 
-            for pair in match.pairs:
+            ink = source_ink({
+                index: page.blob for index, page in source_pages.items() if not is_blank_page(page.blob)
+            })
+            for source_index, target_index, extra in rows:
+                pair = _Row(source_index, target_index)
                 output_index = len(slots)
                 if pair.matched:
                     source_page = source_pages[pair.source_index]
                     blob = source_page.blob
-                    if pair.target_index is not None:
-                        transform = canvas_transform(
-                            source_document[pair.source_index],
-                            target_document[pair.target_index],
-                            (source_page.info.canvas_width, source_page.info.canvas_height),
-                            alignment,
-                            target_canvas_width=source_page.info.canvas_width,
-                        )
-                        blob = transform_page_ink(blob, transform)
-                        canvas = (
-                            max(1, round(transform.target_width)),
-                            max(1, round(transform.target_height)),
-                        )
-                        blob = patch_page(
-                            blob,
-                            pdf_page_index=output_index,
-                            canvas=canvas,
-                            pdf_rect=(0, 0, *canvas),
-                        )
-                    else:
-                        blob = patch_page(blob, pdf_page_index=output_index)
+                    transform = canvas_transform(
+                        source_document[pair.source_index],
+                        target_document[pair.target_index],
+                        (source_page.info.canvas_width, source_page.info.canvas_height),
+                        alignment,
+                        target_canvas_width=source_page.info.canvas_width,
+                    )
+                    contributors = (pair.source_index, *extra)
+                    composed, _placement = compose_slot_ink(
+                        ink, source_document, target_document, pair.target_index, contributors,
+                        alignment, relocate=relocate,
+                    )
+                    if composed is not None:
+                        # 필기가 있는 첫 옛 쪽이 바탕이 된다(그 쪽의 ID·머리). 대표가 빈 쪽이면 필기 있는 쪽으로 바꾼다.
+                        first = next(index for index in contributors if index in ink.pages)
+                        source_page = source_pages[first]
+                        blob = composed
+                    canvas = (
+                        max(1, round(transform.target_width)),
+                        max(1, round(transform.target_height)),
+                    )
+                    blob = patch_page(
+                        blob,
+                        pdf_page_index=output_index,
+                        canvas=canvas,
+                        pdf_rect=(0, 0, *canvas),
+                    )
                     slots.append(
                         _PdfSlot(
                             source_page.name,
@@ -460,6 +503,7 @@ def rebuild_handwriting(
         "page_count": len(slots),
         "note_page_count": len(ordered_pages),
         "matched_count": len(match.matched_pairs),
+        "merged_count": len(merged_sources),
         "inserted_target_count": len(match.target_only),
         "preserved_source_only_count": sum(
             1 for slot in slots if slot.target_index is None

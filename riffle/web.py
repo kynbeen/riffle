@@ -405,9 +405,10 @@ async def retry_handwriting_analysis(request: Request):
 
 
 @app.get("/api/handwriting/preview")
-async def handwriting_preview(request: Request, page_index: int = 0, source_index: int = -2, native_page_id: str = ""):
+async def handwriting_preview(request: Request, page_index: int = 0, source_index: int = -2, native_page_id: str = "",
+                              sources: str = ""):
     return _json_result(
-        await run_in_threadpool(_api(request).handwriting_preview, page_index, source_index, native_page_id)
+        await run_in_threadpool(_api(request).handwriting_preview, page_index, source_index, native_page_id, sources)
     )
 
 

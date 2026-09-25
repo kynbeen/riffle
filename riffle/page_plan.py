@@ -24,6 +24,15 @@ class PlanSlot:
     manual: bool = False
     distance: float | None = None
     margin: float | None = None
+    # 이 새 쪽에 함께 얹는 옛 쪽(대표 ``source_index`` 말고). Sleek 필기본의 반복 수가 줄면 옛 반복 쪽 여럿이 새 쪽
+    # 하나로 모인다(명세 2026-09-25-03).
+    merged: tuple[int, ...] = ()
+
+    @property
+    def sources(self) -> tuple[int, ...]:
+        """이 줄에 손필기를 얹는 옛 쪽 전부 — 대표가 맨 앞."""
+        head = () if self.source_index is None else (self.source_index,)
+        return head + self.merged
 
     @property
     def kind(self) -> str:
@@ -47,6 +56,7 @@ class PlanSlot:
             "manual": self.manual,
             "distance": None if self.distance is None else round(self.distance, 4),
             "margin": None if self.margin is None else round(self.margin, 4),
+            "merged": list(self.merged),
         }
 
 
@@ -76,18 +86,30 @@ class PagePlan:
     excluded_targets: tuple[int, ...] = ()
 
     @classmethod
-    def from_match(cls, result: MatchResult, source_count: int, target_count: int) -> "PagePlan":
+    def from_match(
+        cls,
+        result: MatchResult,
+        source_count: int,
+        target_count: int,
+        *,
+        merged: dict[int, tuple[int, ...]] | None = None,
+        excluded_sources: tuple[int, ...] = (),
+        trusted: bool = False,
+    ) -> "PagePlan":
+        """``trusted`` 면 짝지은 쪽을 모두 확인한 것으로 둔다 — 새 판이 정답인 필기본끼리(명세 2026-09-25-03)."""
+        merged = merged or {}
         slots = tuple(
             PlanSlot(
                 pair.source_index,
                 pair.target_index,
-                confirmed=pair.matched and pair.confident,
+                confirmed=pair.matched and (trusted or pair.confident),
                 distance=pair.distance,
                 margin=pair.margin,
+                merged=tuple(merged.get(pair.target_index, ())) if pair.target_index is not None else (),
             )
             for pair in result.pairs
         )
-        plan = cls(source_count, target_count, slots)
+        plan = cls(source_count, target_count, slots, tuple(excluded_sources))
         plan._validate_complete()
         return plan
 
@@ -123,7 +145,17 @@ class PagePlan:
             excluded = value.get("excluded", False)
             if not isinstance(excluded, bool):
                 raise PagePlanError(f"{index + 1}번째 행의 제외 상태가 올바르지 않습니다.")
+            extra = value.get("merged") or []
+            if not isinstance(extra, list) or any(
+                not isinstance(item, int) or isinstance(item, bool) for item in extra
+            ):
+                raise PagePlanError(f"{index + 1}번째 행의 함께 얹는 쪽이 올바르지 않습니다.")
+            if extra and target is None:
+                raise PagePlanError(f"{index + 1}번째 행은 새 쪽이 없어 옛 쪽을 함께 얹을 수 없습니다.")
+            if extra and source is None:
+                source, extra = extra[0], extra[1:]
             if excluded:
+                excluded_sources.extend(extra)
                 if source is not None:
                     excluded_sources.append(source)
                 if target is not None:
@@ -142,7 +174,7 @@ class PagePlan:
                     or (source, target) not in original_pairs
                 )
             )
-            slots.append(PlanSlot(source, target, confirmed, manual, distance, margin))
+            slots.append(PlanSlot(source, target, confirmed, manual, distance, margin, tuple(extra)))
 
         if original is not None and target_order != list(range(target_count)):
             changed_order = {
@@ -170,7 +202,7 @@ class PagePlan:
             raise PagePlanError("쪽 수가 올바르지 않습니다.")
         if not self.slots:
             raise PagePlanError("결과에는 한 쪽 이상 포함해야 합니다.")
-        sources = [slot.source_index for slot in self.slots if slot.source_index is not None]
+        sources = [source for slot in self.slots for source in slot.sources]
         targets = [slot.target_index for slot in self.slots if slot.target_index is not None]
         sources.extend(self.excluded_sources)
         targets.extend(self.excluded_targets)
@@ -254,6 +286,7 @@ class PagePlan:
                 manual=(same.manual if same is not None else True),
                 distance=same.distance if same is not None else None,
                 margin=same.margin if same is not None else None,
+                merged=prior.merged,
             ))
 
         after_target_order = [slot.target_index for slot in rebuilt if slot.target_index is not None]

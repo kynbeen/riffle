@@ -6,6 +6,8 @@
 이유 종류 — 한 쪽에 여러 까닭이 겹치면 위에 있는 것 하나만 댄다(사람이 먼저 알아야 할 순서):
 
 - ``panel_ink``  — 옛 필기본의 오른쪽 필기 칸 위에 손필기가 있다. 칸의 글이 바뀌었을 수 있다.
+                   (새 파일도 필기본이면 칸 손필기를 여백으로 옮기므로 이 이유는 나오지 않는다 — 명세 2026-09-25-03)
+- ``crowded``    — 필기본 → 필기본에서 새 쪽의 여백이 모자라 옮긴 칸 손필기가 글과 겹친다.
 - ``old_only``   — 새 PDF 에 짝이 없는 옛 쪽인데 필기가 있다. 필기를 잃지 않게 옛 쪽째 남긴다.
                    닮았지만 애매한 새 쪽이 있으면 ``candidate`` 로 함께 보낸다(화면이 나란히 보인다, reorder.py).
 - ``different``  — 짝은 지었지만 생김새가 꽤 다르다.
@@ -19,13 +21,16 @@ from __future__ import annotations
 
 from .page_match import _UNCERTAIN_DISTANCE, _UNCERTAIN_MARGIN
 
-REASONS = ("panel_ink", "old_only", "different", "duplicate", "alignment")
+REASONS = ("panel_ink", "crowded", "old_only", "different", "duplicate", "alignment")
 
 
-def _reason(slot: dict, panel: set[int], blank: set[int], alignment_doubtful: bool) -> str | None:
+def _reason(slot: dict, panel: set[int], blank: set[int], alignment_doubtful: bool,
+            crowded: set[int] = frozenset()) -> str | None:
     source, target = slot.get("source_index"), slot.get("target_index")
     if source is not None and source in panel:
         return "panel_ink"
+    if target is not None and target in crowded:
+        return "crowded"
     if target is None:
         return None if source in blank else "old_only"
     if source is None:
@@ -53,6 +58,11 @@ def review(inspection: dict) -> dict:
     alignment = inspection.get("alignment") or {}
     doubtful = bool(alignment.get("requires_confirmation"))
     candidates = {source: target for source, target in inspection.get("pair_candidates") or []}
+    crowded = set(inspection.get("crowded_targets") or [])
+    # 손필기가 있는 옛 쪽. 형식마다 따로 세던 "빈 쪽" 을 세 형식이 같게 안다(명세 2026-09-25-03).
+    inked = inspection.get("inked_sources")
+    if inked is not None and inspection.get("source_page_count") is not None:
+        blank |= set(range(inspection["source_page_count"])) - set(inked)
     closest = {source: target for source, target in inspection.get("closest_targets") or []}
 
     items = []
@@ -66,7 +76,7 @@ def review(inspection: dict) -> dict:
         else:
             kept_old += 1
             kept_blank += source in blank
-        reason = _reason(slot, panel, blank, doubtful)
+        reason = _reason(slot, panel, blank, doubtful, crowded)
         if reason:
             item = {"slot": position, "source_index": source, "target_index": target, "reason": reason}
             if reason == "old_only" and source in candidates:
@@ -91,7 +101,13 @@ def review(inspection: dict) -> dict:
             # 새 판에서 순서가 바뀌어 다시 짝지은 옛 쪽 — 자신 있게 짝지었으니 알리기만 한다(원칙 0)
             "moved": len(inspection.get("moved_sources") or []),
             "result_pages": matched + new_pages + kept_old,
+            # 새 파일이 Sleek 필기본일 때 — 알리기만 하는 것(명세 2026-09-25-03)
+            "merged": sum(len(slot.get("merged") or []) for slot in slots),       # 새 쪽에 함께 얹은 옛 쪽
+            "dropped": len(plan.get("excluded_sources") or []),                  # 새 판에 없어 뺀 빈 옛 쪽
+            "resized": inspection.get("resized_runs") or 0,                      # 반복 수가 바뀐 강의록 쪽
+            "relocated": len(inspection.get("relocated_targets") or []),         # 칸 손필기를 여백으로 옮긴 쪽
         },
+        "notes_mode": inspection.get("notes_mode") or "",
     }
 
 

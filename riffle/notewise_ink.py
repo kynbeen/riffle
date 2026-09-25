@@ -81,37 +81,40 @@ def _canvas_size(page_fields: dict[int, list[bytes | int]]) -> tuple[float, floa
     return None
 
 
+def object_stroke(object_payload: bytes | int) -> NotewiseStroke | None:
+    """페이지 메시지의 객체(필드 4) 하나를 획으로. 펜·형광펜이 아니면 ``None``."""
+    if not isinstance(object_payload, bytes):
+        return None
+    outer = _message_values(object_payload)
+    transform = outer.get(3, [None])[0]
+    if 4 in outer:  # 굵기가 변하는 펜
+        pen = _message_values(bytes(outer[4][0]))
+        xs, ys, widths = _floats(pen.get(4, [None])[0]), _floats(pen.get(5, [None])[0]), _floats(pen.get(6, [None])[0])
+        color, opacity = _style(pen.get(3, [None])[0])
+        kind = "pen"
+    elif 5 in outer:  # 굵기가 일정한 형광펜
+        pen = _message_values(bytes(outer[5][0]))
+        xs, ys = _floats(pen.get(3, [None])[0]), _floats(pen.get(4, [None])[0])
+        width = float(pen.get(1, [1])[0]) if isinstance(pen.get(1, [1])[0], int) else 1.0
+        widths = (width,) * min(len(xs), len(ys))
+        color, opacity = _style(pen.get(2, [None])[0])
+        kind = "highlighter"
+    else:
+        return None
+    count = min(len(xs), len(ys))
+    if count < 1:
+        return None
+    points = tuple(_transform(transform, xs[index], ys[index]) for index in range(count))
+    if len(widths) < count:
+        widths = widths + ((widths[-1] if widths else 1.0),) * (count - len(widths))
+    return NotewiseStroke(kind, points, tuple(widths[:count]), color, opacity)
+
+
 def read_notewise_strokes(page_payload: bytes) -> tuple[tuple[NotewiseStroke, ...], tuple[float, float]]:
     """지원하는 필기 객체와 그 페이지의 캔버스 크기를 돌려준다."""
     message = base64.b64decode(page_payload, validate=False)
     page_fields = _message_values(message)
-    strokes: list[NotewiseStroke] = []
-    for object_payload in page_fields.get(4, []):
-        if not isinstance(object_payload, bytes):
-            continue
-        outer = _message_values(object_payload)
-        transform = outer.get(3, [None])[0]
-        if 4 in outer:  # 굵기가 변하는 펜
-            pen = _message_values(bytes(outer[4][0]))
-            xs, ys, widths = _floats(pen.get(4, [None])[0]), _floats(pen.get(5, [None])[0]), _floats(pen.get(6, [None])[0])
-            color, opacity = _style(pen.get(3, [None])[0])
-            kind = "pen"
-        elif 5 in outer:  # 굵기가 일정한 형광펜
-            pen = _message_values(bytes(outer[5][0]))
-            xs, ys = _floats(pen.get(3, [None])[0]), _floats(pen.get(4, [None])[0])
-            width = float(pen.get(1, [1])[0]) if isinstance(pen.get(1, [1])[0], int) else 1.0
-            widths = (width,) * min(len(xs), len(ys))
-            color, opacity = _style(pen.get(2, [None])[0])
-            kind = "highlighter"
-        else:
-            continue
-        count = min(len(xs), len(ys))
-        if count < 1:
-            continue
-        points = tuple(_transform(transform, xs[index], ys[index]) for index in range(count))
-        if len(widths) < count:
-            widths = widths + ((widths[-1] if widths else 1.0),) * (count - len(widths))
-        strokes.append(NotewiseStroke(kind, points, tuple(widths[:count]), color, opacity))
+    strokes = [stroke for item in page_fields.get(4, []) if (stroke := object_stroke(item)) is not None]
 
     canvas = _canvas_size(page_fields)
     if canvas is None:

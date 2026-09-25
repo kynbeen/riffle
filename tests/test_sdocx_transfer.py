@@ -197,7 +197,7 @@ class SdocxTransferTests(unittest.TestCase):
             self.source_sdocx, self.target_pdf, 0
         )
         with patch(
-            "riffle.sdocx_transfer.render_comparison",
+            "riffle.alignment.render_comparison",
             return_value=(before, after),
         ) as compare:
             preview_transfer(

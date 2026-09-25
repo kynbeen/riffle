@@ -444,6 +444,84 @@ def _transform_tpl(blob: bytes, transform: CanvasTransform) -> bytes:
     return bytes(output)
 
 
+def _is_header(fields: dict) -> bool:
+    """머리말 레코드: 요소 번호(필드 1, 글자)와 요소 종류(필드 9, 정수)가 있다. 본문의 필드 9 는 메시지다."""
+    kind = fields.get(9)
+    return 1 in fields and bool(kind) and isinstance(kind[0], int)
+
+
+def _stroke_body(record: bytes) -> bytes | None:
+    payload = field_values(record).get(7)
+    return bytes(payload[0]) if payload and isinstance(payload[0], bytes) else None
+
+
+def journal_elements(page_payload: bytes) -> list[tuple[int, int]]:
+    """저널의 요소마다 ``(첫 레코드, 끝 레코드+1)``. 스키마 25 이상은 (머리말, 본문) 둘이 한 요소다.
+
+    머리말은 요소 번호(필드 1)와 종류(필드 9)를 갖고 본문은 없다. 짝이 맞지 않는 저널(스키마 24 의 평평한 흐름)은
+    레코드 하나가 한 요소다.
+    """
+    records = split_delimited(page_payload) if page_payload else []
+    headers = [_is_header(field_values(record)) for record in records]
+    paired =bool(records) and len(records) % 2 == 0 and all(headers[0::2]) and not any(headers[1::2])
+    if paired:
+        return [(index, index + 2) for index in range(0, len(records), 2)]
+    return [(index, index + 1) for index in range(len(records))]
+
+
+def element_boxes(page_payload: bytes) -> list[tuple[float, float, float, float] | None]:
+    """요소마다 획 점들의 상자(캔버스 좌표). 획이 아닌 요소는 ``None``."""
+    records = split_delimited(page_payload) if page_payload else []
+    boxes: list[tuple[float, float, float, float] | None] = []
+    for start, end in journal_elements(page_payload):
+        points = [point for record in records[start:end]
+                  for stroke in read_goodnotes_strokes(join_delimited([record]))
+                  for point in stroke.points]
+        if not points:
+            boxes.append(None)
+            continue
+        xs, ys = [x for x, _y in points], [y for _x, y in points]
+        boxes.append((min(xs), min(ys), max(xs), max(ys)))
+    return boxes
+
+
+def transform_goodnotes_elements(
+    page_payload: bytes, transforms: list[CanvasTransform]
+) -> bytes:
+    """요소마다 다른 변환으로 획을 옮긴다(명세 2026-09-25-03). ``transforms`` 는 :func:`journal_elements` 순서."""
+    records = split_delimited(page_payload) if page_payload else []
+    elements = journal_elements(page_payload)
+    if len(elements) != len(transforms):
+        raise GoodnotesTransferError("요소마다 줄 변환의 수가 요소 수와 다릅니다.")
+    out: list[bytes] = []
+    for (start, end), transform in zip(elements, transforms):
+        for record in records[start:end]:
+            out.append(record if transform.identity else _transform_record(record, transform))
+    return join_delimited(out)
+
+
+def merge_goodnotes_journals(base: bytes, others: list[bytes]) -> bytes:
+    """다른 쪽 저널의 요소를 바이트째 뒤에 붙인다. 요소 번호가 문서 안에서 이미 서로 다르다."""
+    records = split_delimited(base) if base else []
+    for other in others:
+        if other:
+            records.extend(split_delimited(other))
+    return join_delimited(records)
+
+
+def _transform_record(record: bytes, transform: CanvasTransform) -> bytes:
+    stroke_payload = _stroke_body(record)
+    if stroke_payload is None:
+        return record
+    stroke = field_values(stroke_payload)
+    geometry = stroke.get(2)
+    if not geometry or not isinstance(geometry[0], bytes) or not geometry[0]:
+        return record
+    transformed = _transform_tpl(apple_lz4_decompress(bytes(geometry[0])), transform)
+    stroke_payload = replace_field(stroke_payload, 2, [(2, apple_lz4_store(transformed))])
+    return replace_field(record, 7, [(2, stroke_payload)])
+
+
 def transform_goodnotes_journal(
     page_payload: bytes, transform: CanvasTransform
 ) -> bytes:

@@ -69,7 +69,9 @@ def preview_transfer(
     inspection: TransferInspection | None = None,
     *,
     source_index_override: int = -2,
+    sources: tuple[int, ...] | None = None,
 ) -> tuple[bytes, bytes, bytes, int]:
+    """``sources`` 를 주면 그 옛 쪽들(대표가 맨 앞)의 필기를 새 쪽 하나에 모두 얹어 본다(명세 2026-09-25-03)."""
     _inspect, preview, _transfer = _handlers(source)
     return preview(
         source,
@@ -77,6 +79,7 @@ def preview_transfer(
         page_index,
         inspection,
         source_index_override=source_index_override,
+        sources=sources,
     )
 
 

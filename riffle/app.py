@@ -323,7 +323,9 @@ class ComposerApi:
         except Exception as exc:
             return self._error(exc)
 
-    def handwriting_preview(self, page_index: int = 0, source_index: int = -2, native_page_id: str = "") -> dict:
+    def handwriting_preview(self, page_index: int = 0, source_index: int = -2, native_page_id: str = "",
+                            sources: str = "") -> dict:
+        """``sources`` — 쉼표로 이은 옛 쪽 번호(대표가 맨 앞). 주면 그 쪽들의 필기를 새 쪽 하나에 모두 얹는다."""
         try:
             inspection = self._inspection()
             index = -1 if int(page_index) == -1 else max(0, min(int(page_index), inspection.page_count - 1))
@@ -334,12 +336,14 @@ class ComposerApi:
                     self._handwriting_source, str(native_page_id)
                 )
             else:
+                chosen = tuple(int(item) for item in str(sources).split(",") if item.strip()) if sources else None
                 before, after, ink, stroke_count = preview_transfer(
                     self._handwriting_source,
                     self._handwriting_target,
                     index,
                     inspection,
                     source_index_override=int(source_index),
+                    sources=chosen,
                 )
             return self._ok(
                 index=index,

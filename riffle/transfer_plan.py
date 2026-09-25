@@ -15,9 +15,12 @@ from pathlib import Path
 from collections.abc import Callable, Sequence
 
 from .alignment import Alignment, estimate_alignment, place_page
+from .ink_layer import InkCodec
+from .ink_transform import CanvasTransform, canvas_transform
 from .page_match import MatchResult, fingerprints, match_fingerprints
 from .reorder import Reorder, pair_reordered
 from .page_plan import PagePlan
+from .sleek_match import NOTES, NotesMatch, match_notes, notes_mode
 
 
 class HandwritingTransferError(RuntimeError):
@@ -46,13 +49,28 @@ class TransferInspection:
     closest_targets: tuple[tuple[int, int], ...] = ()     # 짝도 후보도 없는 옛 쪽 → 가장 닮은 새 쪽
     # 판정에 쓴 옛·새 쪽 지문 — 저장할 때 사례로 남긴다(cases.py). as_dict 에 넣지 않는다(화면 응답이 무거워진다).
     prints: tuple = field(default=(), repr=False, compare=False)
+    # 새 파일이 Sleek 필기본일 때(명세 2026-09-25-03): "notes"(필기본 → 필기본) · "into_notes"(그 밖 → 필기본) · ""
+    notes_mode: str = ""
+    merged: tuple[tuple[int, tuple[int, ...]], ...] = ()     # 새 쪽 → 함께 얹는 옛 쪽
+    dropped_sources: tuple[int, ...] = ()                     # 새 판에 없고 손필기도 없어 결과에서 뺀 옛 쪽
+    resized_runs: int = 0                                     # 반복 수가 바뀐 강의록 쪽 수
+    crowded_targets: tuple[int, ...] = ()                     # 여백이 모자라 칸 손필기가 글과 겹친 새 쪽
+    relocated_targets: tuple[int, ...] = ()                   # 칸 손필기를 여백으로 옮긴 새 쪽
+    inked_sources: tuple[int, ...] = ()                       # 손필기가 있는 옛 쪽
+
+    def page_plan(self) -> PagePlan | None:
+        if self.match is None or self.source_page_count is None:
+            return None
+        return PagePlan.from_match(
+            self.match, self.source_page_count, self.page_count,
+            merged=dict(self.merged), excluded_sources=self.dropped_sources,
+            trusted=self.notes_mode == NOTES,
+        )
 
     def as_dict(self) -> dict:
         plan = None
         if self.match is not None and self.source_page_count is not None:
-            page_plan = PagePlan.from_match(
-                self.match, self.source_page_count, self.page_count
-            )
+            page_plan = self.page_plan()
             if self.alignment is not None and self.alignment.requires_confirmation:
                 page_plan = replace(page_plan, slots=tuple(
                     replace(slot, confirmed=False) if slot.kind == "matched" else slot
@@ -62,6 +80,12 @@ class TransferInspection:
                 panel = set(self.panel_ink_sources)
                 page_plan = replace(page_plan, slots=tuple(
                     replace(slot, confirmed=False) if slot.source_index in panel else slot
+                    for slot in page_plan.slots
+                ))
+            if self.crowded_targets:
+                crowded = set(self.crowded_targets)
+                page_plan = replace(page_plan, slots=tuple(
+                    replace(slot, confirmed=False) if slot.target_index in crowded else slot
                     for slot in page_plan.slots
                 ))
             plan = page_plan.as_dict()
@@ -83,6 +107,13 @@ class TransferInspection:
             "moved_sources": list(self.moved_sources),
             "pair_candidates": [list(pair) for pair in self.pair_candidates],
             "closest_targets": [list(pair) for pair in self.closest_targets],
+            "notes_mode": self.notes_mode,
+            "merged": [[target, list(sources)] for target, sources in self.merged],
+            "dropped_sources": list(self.dropped_sources),
+            "resized_runs": self.resized_runs,
+            "crowded_targets": list(self.crowded_targets),
+            "relocated_targets": list(self.relocated_targets),
+            "inked_sources": list(self.inked_sources),
         }
 
 
@@ -237,6 +268,27 @@ def build_planned_background_pdf(
     return payload
 
 
+@dataclass(frozen=True)
+class PlannedTransfer:
+    mode: str
+    alignment: Alignment | None
+    page_count: int
+    match: MatchResult
+    reorder: Reorder
+    notes: NotesMatch | None = None
+
+
+def _alignment_pairs(source_document, target_document, pairs) -> list[tuple[int, int]]:
+    """정렬을 잴 짝. 필기본 맨 앞 전용 쪽(강의록 쪽 없음)은 뺀다 — 쪽 전체의 글이 본문으로 잡혀 배율을 흐린다."""
+    from .sleek_notes import page_layout
+
+    def front(page) -> bool:
+        layout = page_layout(page)
+        return layout is not None and layout.lecture is None
+
+    return [(s, t) for s, t in pairs if not front(source_document[s]) and not front(target_document[t])]
+
+
 def plan_transfer(
     embedded_pdf: bytes,
     target: Path,
@@ -244,10 +296,13 @@ def plan_transfer(
     source_label: str = "내장 PDF",
     error: type[Exception] = HandwritingTransferError,
     progress: Callable[[str], None] | None = None,
-) -> tuple[str, Alignment | None, int, MatchResult, Reorder]:
+    inked: set[int] | None = None,
+) -> PlannedTransfer:
     """그대로 넣을지(``exact``), 본문 기준으로 다시 앉힐지(``aligned``) 정한다.
 
     짝짓기 뒤에 새 판에서 순서가 바뀐 쪽을 다시 짝짓는다(``reorder.py``). 돌려주는 ``match`` 는 그 결과다.
+    새 파일이 Sleek 필기본이면 반복 묶음 단위로 짝짓는다(``sleek_match.py``, 명세 2026-09-25-03). ``inked`` 는
+    손필기가 있는 옛 쪽 — 새 판에 없는 옛 쪽을 남길지 뺄지 가른다.
     """
     source_document = open_pdf(embedded_pdf, source_label, error=error)
     try:
@@ -255,16 +310,25 @@ def plan_transfer(
     except Exception:
         source_document.close()
         raise
+    notes = None
     try:
         source_geometry = geometry(source_document)
         target_geometry = geometry(target_document)
         if progress:
             progress("matching")
         source_prints, target_prints = fingerprints(source_document), fingerprints(target_document)
-        reorder = pair_reordered(match_fingerprints(source_prints, target_prints), source_prints, target_prints)
+        mode_of_notes = notes_mode(source_document, target_document)
+        if mode_of_notes is not None:
+            notes = match_notes(source_document, target_document, source_prints, target_prints,
+                                set(inked or ()), mode_of_notes)
+            reorder = notes.reorder
+        else:
+            reorder = pair_reordered(match_fingerprints(source_prints, target_prints), source_prints, target_prints)
         match = reorder.match
         # 다시 짝지은 쪽이 있으면 쪽 순서가 원본과 엇갈리므로 바이트 그대로 넣을 수 없다.
-        rebuild = bool(match.source_only or match.target_only or reorder.moved)
+        # 필기본 → 필기본은 늘 다시 짓는다 — 칸 손필기를 쪽마다 여백으로 옮겨야 한다.
+        rebuild = bool(match.source_only or match.target_only or reorder.moved
+                       or (notes is not None and (notes.merged or notes.dropped or notes.mode == NOTES)))
         matched_indices = [
             (pair.source_index, pair.target_index) for pair in match.matched_pairs
         ]
@@ -276,12 +340,18 @@ def plan_transfer(
         )
         if progress:
             progress("alignment")
-        alignment = estimate_alignment(source_document, target_document, matched_indices)
+        alignment = estimate_alignment(
+            source_document, target_document,
+            _alignment_pairs(source_document, target_document, matched_indices),
+        )
         if progress:
             progress("preview")
     finally:
         source_document.close()
         target_document.close()
+
+    def result(mode: str, fit: Alignment | None) -> PlannedTransfer:
+        return PlannedTransfer(mode, fit, len(target_geometry), match, reorder, notes)
 
     if alignment is None:
         if not same_geometry:
@@ -289,14 +359,232 @@ def plan_transfer(
                 "페이지 크기가 다른데 두 문서의 본문 영역을 찾지 못해 정렬 배율을 정할 수 없습니다. "
                 "내용이 비어 있거나 스캔 품질이 낮은 문서일 수 있습니다."
             )
-        mode = "rebuild" if rebuild else "exact"
-        return mode, None, len(target_geometry), match, reorder
+        return result("rebuild" if rebuild else "exact", None)
     if same_geometry and not (alignment.improves and alignment.axes_agree):
         # 페이지 크기가 같고 본문 배치도 그대로면 사용자의 PDF를 바이트 그대로 넣는다.
-        mode = "rebuild" if rebuild else "exact"
-        return mode, None, len(target_geometry), match, reorder
-    mode = "rebuild" if rebuild else "aligned"
-    return mode, alignment, len(target_geometry), match, reorder
+        return result("rebuild" if rebuild else "exact", None)
+    return result("rebuild" if rebuild else "aligned", alignment)
+
+
+# ---------------------------------------------------------------- 형식 공통 분석·쪽 필기(명세 2026-09-25-03)
+
+_PANEL_EDGE_SLACK = 2.0
+
+
+@dataclass(frozen=True)
+class SourceInk:
+    """옛 파일의 쪽마다 필기 바이트와 캔버스. 형식이 채우고, 판정·배치는 이 모듈과 ``page_ink`` 가 한다."""
+
+    codec: InkCodec
+    pages: dict[int, tuple[bytes, tuple[float, float]]]    # 옛 PDF 쪽 번호 → (필기 바이트, 캔버스 크기)
+    fixed_canvas_width: bool = False                        # Samsung Notes: 캔버스 폭이 쪽 폭과 무관하게 고정
+    stroke_counts: dict[int, int] = field(default_factory=dict)
+
+    def inked(self) -> set[int]:
+        if self.stroke_counts:
+            return {index for index, count in self.stroke_counts.items() if count > 0}
+        return {index for index, (payload, _canvas) in self.pages.items() if payload}
+
+    def base(self, source_page, target_page, index: int, alignment: Alignment | None) -> CanvasTransform:
+        canvas = self.pages[index][1]
+        return canvas_transform(
+            source_page, target_page, canvas, alignment,
+            target_canvas_width=canvas[0] if self.fixed_canvas_width else None,
+        )
+
+
+def compose_slot_ink(
+    ink: SourceInk,
+    source_document,
+    target_document,
+    target_index: int,
+    sources: Sequence[int],
+    alignment: Alignment | None,
+    *,
+    relocate: bool,
+):
+    """새 쪽 하나에 얹을 필기 바이트(옛 쪽들을 객체마다 옮겨 합친 것)와 배치. 필기가 없으면 ``(None, None)``.
+
+    저장과 미리보기가 이 함수 하나를 쓴다 — 화면에 보인 자리와 파일 속 자리가 어긋날 수 없다(원칙 5).
+    """
+    from .page_ink import Contribution, compose_page
+
+    present = [index for index in sources if index in ink.pages]
+    if not present:
+        return None, None
+    target_page = target_document[target_index]
+    contributions = []
+    payloads = []
+    for index in present:
+        payload, canvas = ink.pages[index]
+        base = ink.base(source_document[index], target_page, index, alignment)
+        try:
+            boxes = ink.codec.boxes(payload)
+        except Exception:
+            # 객체를 해석하지 못하는 쪽은 예전처럼 쪽 변환 하나로 옮긴다(좌표를 모르는 것은 건드리지 않는다).
+            boxes = None
+        contributions.append(Contribution(index, source_document[index], canvas, boxes, base))
+        payloads.append(payload)
+    return compose_page(ink.codec, target_page, payloads, contributions, relocate=relocate)
+
+
+def preview_slot(
+    ink: SourceInk,
+    embedded_pdf: bytes,
+    target: Path,
+    target_index: int,
+    sources: Sequence[int],
+    inspection: "TransferInspection",
+    render_ink: Callable[[bytes | None, int, int, tuple[float, float]], tuple[bytes, int]],
+    *,
+    source_label: str,
+    error: type[Exception],
+    max_side: int = 900,
+) -> tuple[bytes, bytes, bytes, int]:
+    """새 쪽 하나에 옛 쪽들(``sources`` — 대표가 맨 앞)의 필기를 얹은 모습. 저장과 같은 :func:`compose_slot_ink` 를 쓴다.
+
+    ``render_ink(바이트, 폭, 높이, 새 캔버스 크기)`` 만 형식마다 다르다. 돌려주는 것은 (옛 배경을 새 쪽 틀에 맞춘 것,
+    새 쪽, 필기 투명 그림, 그린 획 수).
+    """
+    from io import BytesIO
+
+    from PIL import Image
+
+    from .alignment import render_comparison
+    from . import pdf as pymupdf
+
+    with open_pdf(embedded_pdf, source_label, error=error) as source_document, \
+            open_pdf(target, "대상 PDF", error=error) as target_document:
+        if not 0 <= target_index < target_document.page_count:
+            raise error(f"새 PDF에 없는 쪽 번호입니다: {target_index + 1}")
+        if any(not 0 <= index < source_document.page_count for index in sources):
+            raise error("원본 문서에 없는 쪽 번호입니다.")
+        alignment = inspection.alignment
+        machine = {(pair.source_index, pair.target_index) for pair in (inspection.match.matched_pairs
+                                                                         if inspection.match else ())}
+        if sources and (sources[0], target_index) not in machine:
+            # 사람이 고른 짝은 그 짝으로 위치를 다시 잰다(저장도 고친 계획의 짝으로 잰다).
+            alignment = alignment_for_pairs(source_document, target_document, [(sources[0], target_index)],
+                                            error=error)
+        if sources:
+            before, after = render_comparison(source_document, target_document, alignment, sources[0],
+                                              max_side, target_page_index=target_index)
+        else:
+            page = target_document[target_index]
+            scale = min(max_side / max(page.rect.width, page.rect.height), 3.0)
+            after = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False).tobytes("png")
+            before = after
+        with Image.open(BytesIO(after)) as image:
+            width, height = image.size
+        payload, _placement = compose_slot_ink(
+            ink, source_document, target_document, target_index, sources, alignment,
+            relocate=inspection.notes_mode == NOTES,
+        )
+        if payload is None:
+            layer, count = render_ink(None, width, height, (1.0, 1.0))
+            return before, after, layer, count
+        first = next(index for index in sources if index in ink.pages)
+        base = ink.base(source_document[first], target_document[target_index], first, alignment)
+        layer, count = render_ink(payload, width, height, (base.target_width, base.target_height))
+        return before, after, layer, count
+
+
+def panel_ink_sources(ink: SourceInk, source_document) -> tuple[int, ...]:
+    """옛 파일이 Sleek 필기본일 때 오른쪽 필기 칸 위에 손필기가 있는 옛 쪽(0부터). 세 형식이 같은 규칙이다."""
+    from .sleek_notes import original_box
+
+    found = []
+    for index, (payload, canvas) in sorted(ink.pages.items()):
+        if not 0 <= index < source_document.page_count or not payload:
+            continue
+        page = source_document[index]
+        box = original_box(page)
+        if box is None:
+            continue
+        try:
+            boxes = ink.codec.boxes(payload)
+        except Exception:
+            continue
+        edge = (box.x1 + _PANEL_EDGE_SLACK) * canvas[0] / page.rect.width
+        if any(item is not None and item[2] > edge for item in boxes):
+            found.append(index)
+    return tuple(found)
+
+
+def inspect_pdfs(
+    *,
+    source_name: str,
+    target_name: str,
+    embedded_pdf: bytes,
+    target: Path,
+    ink: SourceInk,
+    source_label: str,
+    error: type[Exception],
+    progress: Callable[[str], None] | None,
+    annotated_page_count: int,
+    stroke_cache_count: int,
+    embedded_pdf_name: str,
+    source_page_count: int,
+    target_size: int,
+    source_order: tuple[dict, ...] = (),
+) -> TransferInspection:
+    """세 형식이 같은 길로 분석한다 — 짝짓기·칸 손필기·필기본 갱신 판정이 형식과 무관하다(요청 6)."""
+    inked = ink.inked()
+    planned = plan_transfer(embedded_pdf, target, source_label=source_label, error=error,
+                            progress=progress, inked=inked)
+    notes = planned.notes
+    panel: tuple[int, ...] = ()
+    crowded: list[int] = []
+    relocated: list[int] = []
+    source_document = open_pdf(embedded_pdf, source_label, error=error)
+    try:
+        if notes is None or notes.mode != NOTES:
+            panel = panel_ink_sources(ink, source_document)
+        else:
+            # 필기본 → 필기본: 칸 손필기는 여백으로 옮긴다. 자리가 모자란 새 쪽만 사람에게 보인다.
+            with open_pdf(target, "대상 PDF", error=error) as target_document:
+                for pair in planned.match.matched_pairs:
+                    sources = [pair.source_index, *notes.merged.get(pair.target_index, ())]
+                    if not any(ink.pages.get(index, (b"",))[0] for index in sources):
+                        continue
+                    _payload, placement = compose_slot_ink(
+                        ink, source_document, target_document, pair.target_index, sources,
+                        planned.alignment, relocate=True,
+                    )
+                    if placement is not None and placement.crowded:
+                        crowded.append(pair.target_index)
+                    if placement is not None and placement.moved:
+                        relocated.append(pair.target_index)
+    finally:
+        source_document.close()
+
+    reorder = planned.reorder
+    return TransferInspection(
+        source_name=source_name,
+        target_name=target_name,
+        page_count=planned.page_count,
+        annotated_page_count=annotated_page_count,
+        stroke_cache_count=stroke_cache_count,
+        embedded_pdf_name=embedded_pdf_name,
+        target_size=target_size,
+        source_page_count=source_page_count,
+        mode=planned.mode,
+        alignment=planned.alignment,
+        match=planned.match,
+        source_order=source_order,
+        panel_ink_sources=panel,
+        moved_sources=reorder.moved,
+        pair_candidates=tuple(sorted(reorder.candidates.items())),
+        closest_targets=tuple(sorted(reorder.closest.items())),
+        prints=reorder.prints,
+        notes_mode=notes.mode if notes else "",
+        merged=tuple(sorted(notes.merged.items())) if notes else (),
+        dropped_sources=notes.dropped if notes else (),
+        resized_runs=notes.resized_runs if notes else 0,
+        crowded_targets=tuple(sorted(crowded)),
+        relocated_targets=tuple(sorted(relocated)),
+        inked_sources=tuple(sorted(inked)),
+    )
 
 
 def alignment_for_plan(
@@ -345,7 +633,9 @@ def alignment_for_pairs(
         )
         for source_index, target_index in pairs
     )
-    alignment = estimate_alignment(source_document, target_document, pairs)
+    alignment = estimate_alignment(
+        source_document, target_document, _alignment_pairs(source_document, target_document, pairs)
+    )
     if alignment is None:
         if not same_geometry:
             raise error(

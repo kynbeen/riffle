@@ -12,6 +12,7 @@ Sleek 필기본(``<강의> 필기.pdf``)은 강의록 쪽을 왼쪽 위 ``(0, 0,
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 _TOLERANCE = 1.0
 _MIN_ORIGINAL_SHARE = 0.3
@@ -70,4 +71,102 @@ def content_rect(page):
     return original_box(page) or page.rect
 
 
-__all__ = ["content_rect", "original_box"]
+# ---------------------------------------------------------------- 필기본 파일 전체(명세 2026-09-25-03)
+
+@dataclass(frozen=True)
+class NotesPage:
+    """필기본 쪽 하나의 배치. ``lecture`` 는 끼운 강의록 쪽 상자 — 맨 앞 전용 쪽이면 ``None``.
+
+    ``panel_left`` 부터 쪽 오른쪽 끝까지가 필기 칸이다. 강의록 영역 밖(칸과, 쪽이 늘어나 생긴 왼쪽 아래)이
+    손필기를 옮길 **여백**의 후보다.
+    """
+
+    lecture: object | None
+    panel_left: float
+    key: str | None = None
+
+
+def page_layout(page, *, with_key: bool = False) -> NotesPage | None:
+    """필기본 쪽이면 배치, 아니면 ``None``. 맨 앞 전용 쪽(「강의를 시작하며」)은 칸만 있고 강의록 쪽이 없다.
+
+    ``with_key`` 면 끼운 강의록 쪽의 내용 열쇠(:func:`lecture_key`)도 붙인다.
+    """
+    box = original_box(page)
+    if box is not None:
+        return NotesPage(box, box.x1, lecture_key(page) if with_key else None)
+    try:
+        if page.rotation or _placed_forms(page):
+            return None
+        lefts = [left for left in _panel_lefts(page) if page.rect.width * _MIN_ORIGINAL_SHARE < left]
+    except Exception:
+        return None
+    return NotesPage(None, min(lefts)) if lefts else None
+
+
+def is_notes_document(document) -> bool:
+    """쪽의 절반 이상이 필기본 쪽이면 필기본 파일이다. 스위치를 두지 않는다(원칙 4)."""
+    count = document.page_count
+    if count < 1:
+        return False
+    found = sum(page_layout(document[index]) is not None for index in range(count))
+    return found * 2 >= count
+
+
+_REFERENCE = re.compile(r"(\d+) 0 R")
+_KEY_OBJECT_LIMIT = 4000
+
+
+def lecture_key(page) -> str | None:
+    """끼운 강의록 쪽의 **내용** 열쇠 — 끼운 틀이 가리키는 객체를 모두 따라가 바이트째 해시한다.
+
+    Sleek 은 필기가 길면 같은 강의록 쪽을 이어서 다시 싣는다. 그 사본들은 그림으로 비교하면 렌더 흔들림 때문에
+    다르게 나오지만(실측 병리학 1주차(1): 그림 해시로 0묶음), 내용 바이트는 같다(12묶음 모두 잡힘). 객체 번호는
+    파일마다 달라 지우고 모양과 스트림만 본다.
+    """
+    import hashlib
+
+    document = page.parent
+    forms = [xref for xref, _name, invoker, bbox in page.get_xobjects()
+             if invoker == 0 and abs(bbox[0]) <= _TOLERANCE]
+    if not forms:
+        return None
+    digest = hashlib.sha1()
+    seen: set[int] = set()
+    stack = [forms[0]]
+    while stack and len(seen) < _KEY_OBJECT_LIMIT:
+        xref = stack.pop()
+        if xref in seen or xref <= 0:
+            continue
+        seen.add(xref)
+        try:
+            body = document.xref_object(xref, compressed=True)
+            digest.update(_REFERENCE.sub("R", body).encode("latin-1", "replace"))
+            if document.xref_is_stream(xref):
+                digest.update(document.xref_stream_raw(xref) or b"")
+        except Exception:
+            return None
+        stack.extend(reversed([int(number) for number in _REFERENCE.findall(body)]))
+    return digest.hexdigest()
+
+
+def panel_text_boxes(page, layout: NotesPage) -> list[tuple[float, float, float, float]]:
+    """강의록 영역 밖에 있는 Sleek 글 줄 상자(쪽 좌표). 여백을 찾을 때 비켜야 할 곳이다."""
+    boxes = []
+    lecture = layout.lecture
+    for x0, y0, x1, y1, *_rest in page.get_text("words"):
+        if lecture is not None and x1 <= lecture.x1 + _TOLERANCE and y1 <= lecture.y1 + _TOLERANCE:
+            continue
+        boxes.append((x0, y0, x1, y1))
+    return boxes
+
+
+def panel_extent(page, layout: NotesPage) -> float:
+    """필기 칸의 글이 실제로 끝나는 높이(쪽 좌표). 반복 묶음 안에서 필기 흐름의 **상대 위치**를 잴 때 쓴다."""
+    bottoms = [y1 for x0, _y0, _x1, y1 in panel_text_boxes(page, layout) if x0 >= layout.panel_left]
+    return max(bottoms, default=0.0)
+
+
+__all__ = [
+    "NotesPage", "content_rect", "is_notes_document", "lecture_key", "original_box",
+    "page_layout", "panel_extent", "panel_text_boxes",
+]

@@ -40,15 +40,18 @@ def _prints(prints: list[PageFingerprint]) -> dict:
 
 
 def _rows(page_plan: list[dict]) -> list[dict]:
-    return [
-        {
+    rows = []
+    for row in page_plan:
+        item = {
             "source": row.get("source_index"),
             "target": row.get("target_index"),
             "excluded": bool(row.get("excluded", False)),
             "confirmed": bool(row.get("confirmed", False)),
         }
-        for row in page_plan
-    ]
+        if row.get("merged"):
+            item["merged"] = list(row["merged"])     # 함께 얹은 옛 쪽(명세 2026-09-25-03) — 있을 때만
+        rows.append(item)
+    return rows
 
 
 def build_case(inspection: Any, page_plan: list[dict], fmt: str) -> dict | None:

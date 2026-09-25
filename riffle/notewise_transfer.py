@@ -23,19 +23,22 @@ from zipfile import BadZipFile, ZIP_DEFLATED, ZipFile, ZipInfo
 
 from PIL import Image
 
-from .alignment import Alignment, render_comparison
+from .alignment import Alignment
 from .ink_transform import CanvasTransform, canvas_transform
 from .notewise_ink import read_notewise_strokes, render_notewise_ink
 from .notewise_proto import NotewiseTransferError, encode_field, iter_fields
 from .page_match import MatchResult
 from .page_plan import PagePlan
+from .ink_layer import NOTEWISE
 from .transfer_plan import (
+    SourceInk,
     TransferInspection,
-    alignment_for_pairs,
     alignment_for_plan,
     build_planned_background_pdf,
+    compose_slot_ink,
+    inspect_pdfs,
     open_pdf,
-    plan_transfer,
+    preview_slot,
 )
 
 
@@ -129,6 +132,7 @@ def _patch_page(
     *,
     blank: bool = False,
     transform: CanvasTransform | None = None,
+    objects_moved: bool = False,
 ) -> bytes:
     message = _decode_message(page_payload, "페이지")
     output = bytearray()
@@ -154,7 +158,8 @@ def _patch_page(
         elif number == 4:
             if blank:
                 continue
-            if wire_type == 2 and transform is not None and not transform.identity:
+            if (wire_type == 2 and transform is not None and not transform.identity
+                    and not objects_moved):
                 value = _transform_page_object(bytes(value), transform)
         elif number == 6 and wire_type == 2 and transform is not None:
             value = _patch_page_canvas(bytes(value), transform)
@@ -302,31 +307,32 @@ def inspect_notewise_transfer(
         progress("structure")
     with _archive_context(source) as (archive, _members, pdf_name, page_names):
         embedded_pdf = archive.read(pdf_name)
-        stroke_counts = [_page_stroke_count(archive.read(name)) for name in page_names]
-    mode, alignment, page_count, match, reorder = plan_transfer(
-        embedded_pdf,
-        target,
+        payloads = [archive.read(name) for name in page_names]
+    ink = source_ink(payloads)
+    stroke_counts = list(ink.stroke_counts.values())
+    return inspect_pdfs(
+        source_name=source.name,
+        target_name=target.name,
+        embedded_pdf=embedded_pdf,
+        target=target,
+        ink=ink,
         source_label="Notewise 내장 PDF",
         error=NotewiseTransferError,
         progress=progress,
-    )
-    return TransferInspection(
-        source_name=source.name,
-        target_name=target.name,
-        page_count=page_count,
         annotated_page_count=sum(count > 0 for count in stroke_counts),
         stroke_cache_count=sum(stroke_counts),
         embedded_pdf_name=pdf_name,
-        target_size=target.stat().st_size,
         source_page_count=len(page_names),
-        mode=mode,
-        alignment=alignment,
-        match=match,
-        moved_sources=reorder.moved,
-        pair_candidates=tuple(sorted(reorder.candidates.items())),
-        closest_targets=tuple(sorted(reorder.closest.items())),
-        prints=reorder.prints,
+        target_size=target.stat().st_size,
     )
+
+
+def source_ink(payloads: list[bytes]) -> SourceInk:
+    """쪽 순서 = 내장 PDF 쪽 번호. 판정·배치는 공통 층이 한다(명세 2026-09-25-03)."""
+    counts = {index: _page_stroke_count(payload) for index, payload in enumerate(payloads)}
+    pages = {index: (payload, read_notewise_strokes(payload)[1])
+             for index, payload in enumerate(payloads) if counts[index] > 0}
+    return SourceInk(NOTEWISE, pages, stroke_counts=counts)
 
 
 def _planned_background_bytes(
@@ -503,10 +509,13 @@ def transfer_notewise_handwriting(
         raise NotewiseTransferError("원본 Notewise 파일을 덮어쓸 수 없습니다.")
 
     inspection = inspect_notewise_transfer(source, target)
-    match = match_override or inspection.match
-    plan = plan_override or PagePlan.from_match(
-        match, inspection.source_page_count, inspection.page_count
-    )
+    if plan_override is not None:
+        plan = plan_override
+    elif match_override is not None:
+        plan = PagePlan.from_match(match_override, inspection.source_page_count, inspection.page_count)
+    else:
+        plan = inspection.page_plan()
+    relocate = inspection.notes_mode == "notes"
 
     output.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(
@@ -555,6 +564,7 @@ def transfer_notewise_handwriting(
                 source_canvases = [
                     read_notewise_strokes(payload)[1] for payload in source_pages
                 ]
+                ink = source_ink(source_pages)
                 for output_index, slot in enumerate(plan.slots):
                     source_index = slot.source_index
                     page_id = secrets.token_urlsafe(18)
@@ -581,16 +591,23 @@ def transfer_notewise_handwriting(
                             transform=transform,
                         )
                     else:
-                        expected_object_count = _page_stroke_count(
-                            source_pages[source_index]
+                        expected_object_count = sum(
+                            _page_stroke_count(source_pages[index]) for index in slot.sources
                         )
+                        composed = None
+                        if slot.target_index is not None:
+                            composed, _placement = compose_slot_ink(
+                                ink, source_document, target_document, slot.target_index,
+                                slot.sources, alignment, relocate=relocate,
+                            )
                         payload = _patch_page(
-                            source_pages[source_index],
+                            composed if composed is not None else source_pages[source_index],
                             page_id,
                             new_pdf_id,
                             relation_id,
                             output_index,
                             transform=transform,
+                            objects_moved=composed is not None,
                         )
                     output_page_ids.append(page_id)
                     output_pages.append((f"page/{page_id}", payload))
@@ -658,8 +675,12 @@ def preview_notewise_transfer(
     inspection: TransferInspection | None = None,
     *,
     source_index_override: int = -2,
+    sources: tuple[int, ...] | None = None,
 ) -> tuple[bytes, bytes, bytes, int]:
-    """이전 배경과 새 배경, 그리고 그 위에 얹을 Notewise 필기 레이어를 그린다."""
+    """이전 배경과 새 배경, 그리고 그 위에 얹을 Notewise 필기 레이어를 그린다.
+
+    새 쪽 자리는 저장과 같은 공통 길(``preview_slot``)로 그린다. ``sources`` 는 그 새 쪽에 얹을 옛 쪽들.
+    """
     from . import pdf as pymupdf
 
     source = Path(source_notewise).expanduser().resolve()
@@ -691,54 +712,25 @@ def preview_notewise_transfer(
         with Image.open(BytesIO(background)) as image:
             ink, count = render_notewise_ink(page_payload, image.size)
         return background, background, ink, count
-    preview_transform = None
-    with pymupdf.open(target) as new_document:
-        if source_index is None:
-            target_page = new_document[target_index]
-            scale = min(900 / max(target_page.rect.width, target_page.rect.height), 3.0)
-            after = target_page.get_pixmap(
-                matrix=pymupdf.Matrix(scale, scale), alpha=False
-            ).tobytes("png")
-            with Image.open(BytesIO(after)) as background:
-                blank = Image.new("RGB", background.size, "white")
-                before_output = BytesIO()
-                blank.save(before_output, format="PNG")
-            before = before_output.getvalue()
-        else:
-            old_document = pymupdf.open(stream=embedded_pdf, filetype="pdf")
-            try:
-                preview_alignment = inspection.alignment
-                if source_index_override >= 0:
-                    preview_alignment = alignment_for_pairs(
-                        old_document,
-                        new_document,
-                        [(source_index, target_index)],
-                        error=NotewiseTransferError,
-                    )
-                source_canvas = read_notewise_strokes(page_payload)[1]
-                preview_transform = canvas_transform(
-                    old_document[source_index],
-                    new_document[target_index],
-                    source_canvas,
-                    preview_alignment,
-                )
-                before, after = render_comparison(
-                    old_document,
-                    new_document,
-                    preview_alignment,
-                    source_index,
-                    target_page_index=target_index,
-                )
-            finally:
-                old_document.close()
-    with Image.open(BytesIO(after)) as background:
-        if page_payload is None:
-            transparent = Image.new("RGBA", background.size, (0, 0, 0, 0))
-            ink_output = BytesIO()
-            transparent.save(ink_output, format="PNG")
-            ink, stroke_count = ink_output.getvalue(), 0
-        else:
-            ink, stroke_count = render_notewise_ink(
-                page_payload, background.size, preview_transform
-            )
-    return before, after, ink, stroke_count
+    if sources is not None:
+        chosen = tuple(sources)
+    else:
+        chosen = () if source_index is None else (source_index,)
+        if source_index_override == -2:
+            chosen += dict(inspection.merged).get(target_index, ())
+    with _archive_context(source) as (archive, _members, _pdf_name, page_names):
+        ink = source_ink([archive.read(name) for name in page_names])
+    return preview_slot(
+        ink, embedded_pdf, target, target_index, chosen, inspection, _render_on_canvas,
+        source_label="Notewise 내장 PDF", error=NotewiseTransferError,
+    )
+
+
+def _render_on_canvas(payload: bytes | None, width: int, height: int, canvas: tuple[float, float]) -> tuple[bytes, int]:
+    """이미 새 캔버스 좌표로 옮긴 쪽 메시지를 그린다."""
+    if payload is None:
+        image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        output = BytesIO()
+        image.save(output, format="PNG")
+        return output.getvalue(), 0
+    return render_notewise_ink(payload, (width, height), CanvasTransform(1.0, 1.0, 0.0, 0.0, *canvas))

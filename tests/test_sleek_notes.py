@@ -157,6 +157,10 @@ class SleekNotesTests(unittest.TestCase):
         self.assertAlmostEqual(strokes[0].points[0][0], 100 * 960 / wide, delta=0.5)
 
     def test_handwriting_on_the_notes_panel_asks_for_confirmation(self):
+        """필기본 → 필기본이 아닌 PDF: 칸 손필기를 둘 칸이 없으니 옮기되 사람에게 묻는다.
+
+        (필기본 → 필기본이면 새 쪽의 여백으로 옮기고 묻지 않는다 — tests/test_sleek_update.py)
+        """
         slides = self.root / "wide.pdf"
         with pymupdf.open() as document:
             for label in ("A", "B", "C", "D"):
@@ -168,7 +172,7 @@ class SleekNotesTests(unittest.TestCase):
         # 넓은 쪽(1430.84pt)이 1848px 캔버스에 들어가 있다. x=1600px ≈ 1239pt 는 필기 칸 위다.
         make_rebuild_source(source, notes, annotated_layers=make_stroke_layers(
             [(1600.0, 300.0), (1610.0, 305.0), (1606.0, 312.0)]))
-        inspection = inspect_transfer(source, notes)
+        inspection = inspect_transfer(source, slides)
         self.assertEqual(inspection.panel_ink_sources, (2,))
         payload = inspection.as_dict()
         self.assertEqual(payload["panel_ink_sources"], [2])

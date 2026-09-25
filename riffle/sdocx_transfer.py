@@ -26,22 +26,24 @@ from zipfile import BadZipFile, ZipFile, ZipInfo
 
 from PIL import Image
 
-from .alignment import Alignment, build_aligned_pdf, render_comparison
-from .ink_transform import canvas_transform
+from .alignment import Alignment, build_aligned_pdf
 from .page_match import MatchResult
 from .page_plan import PagePlan
 from .sdocx_end_tag import SdocxEndTagError, patch_end_tag
 from .sdocx_ink import render_ink_png
 from .sdocx_note import SdocxNoteError, patch_note_times, read_page_order
 from .sdocx_page import read_page
+from .ink_layer import SAMSUNG_NOTES
+from .ink_transform import CanvasTransform
 from .transfer_plan import (
     HandwritingTransferError,
+    SourceInk,
     TransferInspection,
-    alignment_for_pairs,
     geometry as _geometry,
     geometry_mismatches,
+    inspect_pdfs,
     open_pdf,
-    plan_transfer,
+    preview_slot,
 )
 
 _LOCAL_HEADER = b"PK\x03\x04"
@@ -49,8 +51,6 @@ _CENTRAL_HEADER = b"PK\x01\x02"
 _END_OF_CENTRAL = b"PK\x05\x06"
 _ZIP32_LIMIT = 0xFFFFFFFF
 _COPY_CHUNK = 1 << 20
-# 슬라이드 끝에 걸친 획까지 칸 위 필기로 잡지 않게 경계선 너머 이만큼(pt)은 봐준다.
-_PANEL_EDGE_SLACK = 2.0
 
 
 class SdocxTransferError(HandwritingTransferError):
@@ -541,65 +541,64 @@ def inspect_transfer(
             page_blobs = {}
     finally:
         archive.close()
-    panel_ink = _panel_ink_sources(embedded_pdf, page_blobs)
+    with _open_pdf(embedded_pdf, "SDOCX 내장 PDF") as document:
+        source_page_count = document.page_count
 
-    mode, alignment, page_count, match, reorder = plan_transfer(
-        embedded_pdf,
-        target,
+    return inspect_pdfs(
+        source_name=source.name,
+        target_name=target.name,
+        embedded_pdf=embedded_pdf,
+        target=target,
+        ink=source_ink(page_blobs),
         source_label="SDOCX 내장 PDF",
         error=SdocxTransferError,
         progress=progress,
-    )
-
-    return TransferInspection(
-        source_name=source.name,
-        target_name=target.name,
-        page_count=page_count,
         annotated_page_count=annotated_pages,
         stroke_cache_count=spi_count,
         embedded_pdf_name=PurePosixPath(embedded_name).name,
+        source_page_count=source_page_count,
         target_size=target.stat().st_size,
-        source_page_count=len(match.source_to_target()) + len(match.source_only),
-        mode=mode,
-        alignment=alignment,
-        match=match,
-        moved_sources=reorder.moved,
-        pair_candidates=tuple(sorted(reorder.candidates.items())),
-        closest_targets=tuple(sorted(reorder.closest.items())),
-        prints=reorder.prints,
         source_order=tuple(source_order),
-        panel_ink_sources=panel_ink,
     )
 
 
-def _panel_ink_sources(embedded_pdf: bytes, page_blobs: dict[int, bytes]) -> tuple[int, ...]:
-    """원본이 Sleek 필기본일 때 오른쪽 필기 칸 위에 손필기가 있는 원본 쪽 번호(0부터).
+def source_ink(page_blobs: dict[int, bytes]) -> SourceInk:
+    """PDF 쪽 번호 → 객체가 있는 ``.page``. 칸 손필기 검사·필기본 갱신 판정은 공통 층이 한다(명세 2026-09-25-03).
 
-    칸의 글은 필기본을 다시 만들 때마다 바뀔 수 있어, 그 위 손필기는 옮겨도 엉뚱한 글 위에
-    얹힐 수 있다. 옮기기는 하되 사람이 확인하도록 알린다.
+    칸의 글은 필기본을 다시 만들 때마다 바뀔 수 있어, 그 위 손필기는 옮겨도 엉뚱한 글 위에 얹힐 수 있다. 새 파일도
+    필기본이면 여백으로 옮기고, 아니면 옮기기는 하되 사람이 확인하도록 알린다.
     """
-    from .sdocx_ink import read_ink_strokes
-    from .sleek_notes import original_box
+    pages = {}
+    for index, blob in page_blobs.items():
+        info = read_page(blob)
+        pages[index] = (blob, (float(info.canvas_width), float(info.canvas_height)))
+    return SourceInk(SAMSUNG_NOTES, pages, fixed_canvas_width=True)
 
-    if not page_blobs:
-        return ()
-    found = []
-    with _open_pdf(embedded_pdf, "SDOCX 내장 PDF") as document:
-        for index, blob in sorted(page_blobs.items()):
-            if not 0 <= index < document.page_count:
-                continue
-            page = document[index]
-            box = original_box(page)
-            if box is None:
-                continue
-            try:
-                width, _height, strokes = read_ink_strokes(blob)
-            except Exception:
-                continue
-            edge = (box.x1 + _PANEL_EDGE_SLACK) * width / page.rect.width
-            if any(x > edge for stroke in strokes for x, _y in stroke.points):
-                found.append(index)
-    return tuple(found)
+
+def _source_blobs(archive, members) -> dict[int, bytes]:
+    """PDF 배경이 있고 객체가 하나라도 있는 ``.page`` — PDF 쪽 번호별."""
+    from .sdocx_page import is_blank_page
+
+    order_name = _find_suffix(members, "pageIdInfo.dat")
+    order = read_page_order(archive.read(order_name))
+    root = PurePosixPath(order_name).parent
+    blobs = {}
+    for entry in order.entries:
+        name = f"{entry.uuid}.page" if str(root) == "." else str(root / f"{entry.uuid}.page")
+        if name not in members:
+            continue
+        blob = archive.read(name)
+        info = read_page(blob)
+        if info.pdf is not None and not is_blank_page(blob):
+            blobs[info.pdf.page_index] = blob
+    return blobs
+
+
+def _render_on_canvas(payload: bytes | None, width: int, height: int, canvas: tuple[float, float]) -> tuple[bytes, int]:
+    """이미 새 캔버스 좌표로 옮긴 ``.page`` 를 그린다."""
+    if payload is None:
+        return render_ink_png(None, width, height)
+    return render_ink_png(payload, width, height, CanvasTransform(1.0, 1.0, 0.0, 0.0, *canvas))
 
 
 def preview_native_page(
@@ -641,10 +640,12 @@ def preview_transfer(
     inspection: TransferInspection | None = None,
     max_side: int = 900,
     source_index_override: int = -2,
+    sources: tuple[int, ...] | None = None,
 ) -> tuple[bytes, bytes, bytes, int]:
     """한 쪽의 원본·새 배경과 필기 PNG를 같은 크기로 렌더링한다.
 
-    필기는 원본 ``.page``에서 읽어 대상 PDF 캔버스 좌표로 옮긴 뒤 투명 PNG로 그린다.
+    필기는 원본 ``.page``에서 읽어 대상 PDF 캔버스 좌표로 옮긴 뒤 투명 PNG로 그린다. ``sources`` 를 주면 그 옛
+    쪽들(대표가 맨 앞)의 필기를 모두 얹는다 — Sleek 필기본의 반복 수가 줄어 여럿이 모이는 쪽(명세 2026-09-25-03).
     """
     source = Path(source_sdocx).expanduser().resolve()
     target = Path(target_pdf).expanduser().resolve()
@@ -666,6 +667,29 @@ def preview_transfer(
         if pair is None:
             raise SdocxTransferError(f"대상 {page_index + 1}쪽의 원본 매칭을 찾을 수 없습니다.")
         source_index = pair.source_index
+
+    if not source_only:
+        # 새 쪽 자리는 저장과 같은 길로 그린다 — 여러 옛 쪽이 모이는 쪽도, 칸 손필기를 여백으로 옮기는 쪽도.
+        chosen = tuple(sources) if sources is not None else (() if source_index is None else (source_index,))
+        if sources is None and source_index_override == -2:
+            chosen += dict(inspection.merged).get(page_index, ())
+        archive, members, *_rest, embedded_name = _archive_context(source)
+        with archive:
+            embedded_pdf = archive.read(embedded_name)
+            try:
+                blobs = _source_blobs(archive, members)
+            except Exception:
+                # 옛 내보내기는 쪽 정보가 없을 수 있다 — 배경만 미리 본다.
+                blobs = {}
+        try:
+            return preview_slot(
+                source_ink(blobs), embedded_pdf, target, page_index, chosen, inspection, _render_on_canvas,
+                source_label="SDOCX 내장 PDF", error=SdocxTransferError, max_side=max_side,
+            )
+        except SdocxTransferError:
+            raise
+        except Exception as exc:
+            raise SdocxTransferError(f"미리보기를 만들 수 없습니다: {exc}") from exc
 
     archive, members, _media_info_name, _media_info, _pdf_entry, embedded_name = _archive_context(source)
     try:
@@ -704,78 +728,7 @@ def preview_transfer(
             ink, count = render_ink_png(page_blob, image.width, image.height)
         return background, background, ink, count
 
-    source_document = _open_pdf(embedded_pdf, "SDOCX 내장 PDF")
-    try:
-        target_document = _open_pdf(target, "대상 PDF")
-    except Exception:
-        source_document.close()
-        raise
-    try:
-        with source_document, target_document:
-            preview_alignment = inspection.alignment
-            if source_index_override >= 0 and source_index is not None:
-                if not 0 <= source_index < source_document.page_count:
-                    raise SdocxTransferError(
-                        f"원본 문서에 없는 쪽 번호입니다: {source_index + 1}"
-                    )
-                preview_alignment = alignment_for_pairs(
-                    source_document,
-                    target_document,
-                    [(source_index, page_index)],
-                    error=SdocxTransferError,
-                )
-            preview_transform = None
-            if source_index is not None and page_blob is not None:
-                page_info = read_page(page_blob)
-                preview_transform = canvas_transform(
-                    source_document[source_index],
-                    target_document[page_index],
-                    (page_info.canvas_width, page_info.canvas_height),
-                    preview_alignment,
-                    target_canvas_width=page_info.canvas_width,
-                )
-            if inspection.mode == "rebuild" or source_index != page_index:
-                if source_index is None:
-                    page = target_document[page_index]
-                    rect = page.rect
-                    scale = min(max_side / max(rect.width, rect.height), 3.0)
-                    from . import pdf as pymupdf
-
-                    png = page.get_pixmap(
-                        matrix=pymupdf.Matrix(scale, scale), alpha=False
-                    ).tobytes("png")
-                    before, after = png, png
-                else:
-                    if not 0 <= source_index < source_document.page_count:
-                        raise SdocxTransferError(
-                            f"원본 문서에 없는 쪽 번호입니다: {source_index + 1}"
-                        )
-                    before, after = render_comparison(
-                        source_document,
-                        target_document,
-                        preview_alignment,
-                        source_index,
-                        max_side,
-                        target_page_index=page_index,
-                    )
-            else:
-                if not 0 <= source_index < source_document.page_count:
-                    raise SdocxTransferError(
-                        f"원본 문서에 없는 쪽 번호입니다: {source_index + 1}"
-                    )
-                before, after = render_comparison(
-                    source_document, target_document, preview_alignment, page_index, max_side
-                )
-            with Image.open(BytesIO(after)) as preview_image:
-                width, height = preview_image.size
-            ink, stroke_count = render_ink_png(
-                page_blob, width, height, preview_transform
-            )
-            return before, after, ink, stroke_count
-    except SdocxTransferError:
-        raise
-    except Exception as exc:
-        raise SdocxTransferError(f"미리보기를 만들 수 없습니다: {exc}") from exc
+    raise SdocxTransferError("미리보기를 만들 수 없습니다.")
 
 
 def transfer_handwriting(
@@ -799,11 +752,8 @@ def transfer_handwriting(
     output.parent.mkdir(parents=True, exist_ok=True)
 
     if inspection.mode in {"aligned", "rebuild"} or match_override is not None or plan_override is not None:
-        selected_match = (
-            plan_override.to_match_result() if plan_override is not None
-            else match_override or inspection.match
-        )
-        if selected_match is None:
+        selected = plan_override or match_override or inspection.page_plan()
+        if selected is None:
             raise SdocxTransferError("쪽 재조립에 필요한 매칭 결과가 없습니다.")
         from .sdocx_rebuild import rebuild_handwriting
 
@@ -811,11 +761,10 @@ def transfer_handwriting(
             source,
             target,
             output,
-            selected_match,
+            selected,
             mode=inspection.mode,
-            excluded_sources=plan_override.excluded_sources if plan_override else (),
-            excluded_targets=plan_override.excluded_targets if plan_override else (),
             now_us=now_us,
+            relocate=inspection.notes_mode == "notes",
         )
 
     archive, members, media_info_name, media_info, pdf_entry, embedded_name = _archive_context(source)

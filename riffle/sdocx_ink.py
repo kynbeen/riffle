@@ -433,14 +433,104 @@ def transform_page_ink(page_blob: bytes, transform: CanvasTransform) -> bytes:
     """Samsung Notes 페이지의 편집 가능한 획을 대상 PDF 캔버스로 옮긴다."""
     if transform.identity:
         return page_blob
+    return transform_page_objects(page_blob, transform, None)
+
+
+def layer_objects(page_blob: bytes) -> list[tuple[int, int, int]]:
+    """맨 위 객체마다 ``(레이어 번호, 시작, 끝)`` 바이트 자리. 자식 객체는 부모 구간 안에 있다."""
+    info = read_page(page_blob)
+    blob = page_blob
+    position = info.layer_offset
+    if position + 4 > len(blob):
+        raise SdocxPageError("Samsung Notes 레이어 목록이 잘렸습니다.")
+    layer_count = struct.unpack_from("<H", blob, position)[0]
+    position += 4
+    spans: list[tuple[int, int, int]] = []
+    for layer in range(layer_count):
+        if position + 16 > len(blob):
+            raise SdocxPageError("Samsung Notes 레이어 헤더가 잘렸습니다.")
+        header_size = struct.unpack_from("<I", blob, position)[0]
+        count_at = position + header_size
+        if header_size < 16 or count_at + 4 > len(blob):
+            raise SdocxPageError("Samsung Notes 레이어 크기가 올바르지 않습니다.")
+        object_count = struct.unpack_from("<I", blob, count_at)[0]
+        position = count_at + 4
+        for _ in range(object_count):
+            record, end = _object_record(blob, position)
+            if record is None or end <= position:
+                raise SdocxPageError("Samsung Notes 객체를 읽을 수 없습니다.")
+            spans.append((layer, position, end))
+            position = end
+        position += 32
+    return spans
+
+
+def object_boxes(page_blob: bytes) -> list[tuple[float, float, float, float] | None]:
+    """맨 위 객체마다 획 점들의 상자(캔버스 좌표). 획이 없는 객체(글상자·그림 등)는 ``None``."""
+    boxes: list[tuple[float, float, float, float] | None] = []
+    for _layer, start, _end in layer_objects(page_blob):
+        record, _cursor = _object_record(page_blob, start)
+        points = [
+            point
+            for item in _flat_objects(record)
+            if (stroke := _stroke_from_object(page_blob, item)) is not None
+            for point in stroke.points
+            if math.isfinite(point[0]) and math.isfinite(point[1])
+        ]
+        if not points:
+            boxes.append(None)
+            continue
+        xs, ys = [x for x, _y in points], [y for _x, y in points]
+        boxes.append((min(xs), min(ys), max(xs), max(ys)))
+    return boxes
+
+
+def merge_page_objects(base_blob: bytes, others: list[bytes]) -> bytes:
+    """``others`` 의 맨 위 객체를 ``base_blob`` 첫 레이어 끝에 바이트째 덧붙인다(명세 2026-09-25-03).
+
+    Sleek 필기본의 반복 수가 줄면 옛 반복 쪽 여럿의 손필기가 새 쪽 하나에 모인다. 획은 다시 쓰지 않고 레코드를
+    그대로 옮기며, 레이어의 객체 수만 늘린다. 쪽의 다른 부분(머리·속성·끝 해시)은 그대로다.
+    """
+    extra = [page[start:end] for page in others for _layer, start, end in layer_objects(page)]
+    if not extra:
+        return base_blob
+    info = read_page(base_blob)
+    position = info.layer_offset + 4
+    header_size = struct.unpack_from("<I", base_blob, position)[0]
+    count_at = position + header_size
+    count = struct.unpack_from("<I", base_blob, count_at)[0]
+    spans = [span for span in layer_objects(base_blob) if span[0] == 0]
+    insert_at = spans[-1][2] if spans else count_at + 4
+    blob = bytearray(base_blob[:insert_at] + b"".join(extra) + base_blob[insert_at:])
+    struct.pack_into("<I", blob, count_at, count + len(extra))
+    result = bytes(blob)
+    if len(layer_objects(result)) != len(layer_objects(base_blob)) + len(extra):
+        raise SdocxPageError("Samsung Notes 쪽을 합친 뒤 객체 수가 맞지 않습니다.")
+    return result
+
+
+def transform_page_objects(
+    page_blob: bytes,
+    page_transform: CanvasTransform,
+    per_object: list[CanvasTransform] | None,
+) -> bytes:
+    """맨 위 객체마다 다른 변환으로 획을 옮긴다. ``per_object`` 가 없으면 모두 ``page_transform``.
+
+    객체 머리에 되풀이된 캔버스 크기는 좌표가 그대로여도(항등 변환) 새 캔버스 크기로 맞춘다 — 필기본 쪽은
+    높이가 쪽마다 달라 좌표는 같아도 캔버스가 바뀐다.
+    """
     info = read_page(page_blob)
     blob = bytearray(page_blob)
 
-    if info.property_mask & 0x00000001:
+    if info.property_mask & 0x00000001 and not page_transform.identity:
         rect = struct.unpack_from("<4d", blob, info.property_offset)
-        struct.pack_into("<4d", blob, info.property_offset, *transform.rect(rect))
+        struct.pack_into("<4d", blob, info.property_offset, *page_transform.rect(rect))
+    resized = (
+        max(1, round(page_transform.target_width)) != int(info.canvas_width)
+        or max(1, round(page_transform.target_height)) != int(info.canvas_height)
+    )
 
-    def patch_object(position: int) -> int:
+    def patch_object(position: int, transform: CanvasTransform) -> int:
         if position + 7 > len(blob):
             raise SdocxPageError("Samsung Notes 객체 헤더가 잘렸습니다.")
         object_type = blob[position]
@@ -451,7 +541,7 @@ def transform_page_ink(page_blob: bytes, transform: CanvasTransform) -> bytes:
         record_end = payload_start + object_size
         if object_size < 32 or payload_end < payload_start or record_end > len(blob):
             raise SdocxPageError("Samsung Notes 객체 크기가 올바르지 않습니다.")
-        if object_type in (1, 15):
+        if object_type in (1, 15) and (resized or not transform.identity):
             subrecords = _subrecords(blob, payload_start, payload_end)
             base = next((item for item in subrecords if item[0] == 0), None)
             stroke = next((item for item in subrecords if item[0] == 1), None)
@@ -465,10 +555,11 @@ def transform_page_ink(page_blob: bytes, transform: CanvasTransform) -> bytes:
                 )
             if stroke is None:
                 raise SdocxPageError("Samsung Notes 필기 좌표 레코드를 찾을 수 없습니다.")
-            _patch_stroke_subrecord(blob, stroke[1], stroke[2], transform)
+            if not transform.identity:
+                _patch_stroke_subrecord(blob, stroke[1], stroke[2], transform)
         cursor = record_end
         for _ in range(child_count):
-            cursor = patch_object(cursor)
+            cursor = patch_object(cursor, transform)
         return cursor
 
     position = info.layer_offset
@@ -476,6 +567,7 @@ def transform_page_ink(page_blob: bytes, transform: CanvasTransform) -> bytes:
         raise SdocxPageError("Samsung Notes 레이어 목록이 잘렸습니다.")
     layer_count = struct.unpack_from("<H", blob, position)[0]
     position += 4
+    index = 0
     for _ in range(layer_count):
         if position + 16 > len(blob):
             raise SdocxPageError("Samsung Notes 레이어 헤더가 잘렸습니다.")
@@ -486,8 +578,16 @@ def transform_page_ink(page_blob: bytes, transform: CanvasTransform) -> bytes:
         object_count = struct.unpack_from("<I", blob, count_at)[0]
         position = count_at + 4
         for _ in range(object_count):
-            position = patch_object(position)
+            transform = page_transform
+            if per_object is not None:
+                if index >= len(per_object):
+                    raise SdocxPageError("객체마다 줄 변환의 수가 객체 수와 다릅니다.")
+                transform = per_object[index]
+            index += 1
+            position = patch_object(position, transform)
         position += 32
+    if per_object is not None and index != len(per_object):
+        raise SdocxPageError("객체마다 줄 변환의 수가 객체 수와 다릅니다.")
     result = bytes(blob)
     read_page(result)
     return result

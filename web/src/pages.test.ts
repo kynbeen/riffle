@@ -31,6 +31,12 @@ test('옛 쪽째 남김은 필기 없는 쪽도 함께 거른다', () => {
   assert.ok(!matches('kept_blank', 'new'))
 })
 
+test('모든 쪽 보기에서 고친 자동 쪽도 사람 쪽 표시가 이긴다', () => {
+  const edited = { ...context, marks: { ...context.marks, 0: 'excluded' as const }, chosen: new Set([7, 1]) }
+  assert.equal(kindOf(pair(0, 0), edited), 'excluded')
+  assert.equal(kindOf(pair(1, 2), edited), 'chosen')
+})
+
 test('카드에서 남기기로 정한 옛 쪽은 옛 쪽째 남김으로 센다', () => {
   assert.equal(kindOf(pair(6, null), { ...context, marks: { ...context.marks, 6: 'ok' } }), 'kept')
 })

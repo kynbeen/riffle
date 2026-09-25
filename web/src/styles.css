@@ -189,12 +189,34 @@ button, input { font: inherit; color: inherit; }
 }
 .chip-button[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-soft); color: var(--text); font-weight: 600; }
 .page-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 16px; align-items: start; }
-.page-tile { margin: 0; display: grid; gap: 6px; }
+.page-tile {
+  margin: 0; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer;
+  display: grid; gap: 6px; border-radius: 8px;
+}
+.page-tile .sheet-of-paper { display: block; transition: box-shadow 0.2s; }
+.page-tile:hover .sheet-of-paper { box-shadow: 0 0 0 2px var(--accent); }
 .page-tile .placeholder { min-height: 96px; }
-.page-tile figcaption { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.page-caption { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
 .badge { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--bg-hover); color: var(--text-2); }
 .badge.watch { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-.excluded-row { grid-column: 1 / -1; padding: 6px 12px; border-radius: 8px; border: 1px dashed var(--line-strong); }
+.excluded-row {
+  grid-column: 1 / -1; padding: 6px 12px; border-radius: 8px; border: 1px dashed var(--line-strong);
+  background: transparent; text-align: left; cursor: pointer;
+}
+.excluded-row:hover { border-color: var(--accent); }
+
+/* 크게 보기 */
+.viewer-backdrop {
+  position: fixed; inset: 0; z-index: 10; background: rgba(0, 0, 0, 0.32); display: grid; place-items: center; padding: 16px;
+}
+.viewer {
+  width: min(1200px, 100%); max-height: calc(100vh - 32px); overflow: auto; display: grid; gap: 16px; padding: 20px;
+  border-radius: 16px; background: var(--bg); box-shadow: var(--shadow); outline: none;
+}
+.viewer-head { display: flex; align-items: center; gap: 12px; }
+.viewer-title { flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.viewer-pages { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; align-items: start; }
+.viewer-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 
 .savebar { display: flex; gap: 16px; align-items: center; justify-content: flex-end; }
 /* 필기 옮기기의 저장 막대 — 화면 아래에 붙어 늘 보인다(명세 2026-09-25-01) */

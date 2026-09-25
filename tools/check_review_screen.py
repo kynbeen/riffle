@@ -7,6 +7,7 @@
 웹 서버를 빈 포트에 띄우고 Edge 를 창 크기 둘(1440×1000 라이트, 390×844 다크)로 연다. 확인하는 것:
 
 - 카드가 있으면 봐야 할 쪽에서 시작하고, 모든 쪽 격자의 쪽 수·걸러 보기 숫자가 탭 숫자와 같다(첫 쪽 그림까지 걸린 시간도 찍는다)
+- 격자의 자동 쪽을 누르면 크게 보기(옛 쪽·새 쪽 나란히), 이전·다음, 빼기 → 접힌 줄 → 다시 넣기
 - 누른 카드는 한 줄로 접힌다
 - 저장 막대가 스크롤과 상관없이 화면 안에 보인다
 - 저장 뒤 카드를 바꾸면 요약 숫자는 저장한 그대로이고, 저장 막대가 돌아온다
@@ -73,6 +74,22 @@ def run(page: Page, url: str, source: Path, target: Path) -> None:
     watch = page.locator(".chip-button", has_text="볼 쪽")
     watch.click()
     check(page.locator(".page-tile").count() == int(watch.inner_text().split()[-1]), "볼 쪽만 거르면 그 숫자만큼 남는다")
+
+    # 크게 보기 — 격자의 쪽을 누르면 열리고, 넘기고, 뺀 쪽은 접힌 줄에서 다시 넣는다. 끝나면 처음 상태로 돌린다.
+    page.locator(".chip-button").first.click()
+    page.locator(".page-tile.auto").first.click()
+    viewer = page.get_by_role("dialog")
+    check(viewer.locator(".page").count() == 2, "자동 쪽을 누르면 옛 쪽과 새 쪽을 크게 나란히")
+    viewer.get_by_role("button", name="다음").click()
+    check(viewer.get_by_text(re.compile(r"^2 / ")).count() == 1, "다음으로 넘긴다")
+    viewer.get_by_role("button", name="이전").click()
+    viewer.get_by_role("button", name="빼기").click()
+    viewer.get_by_role("button", name="닫기").click()
+    check(page.locator(".excluded-row").count() == 1, "크게 보기에서 뺀 쪽은 격자에 접힌 줄")
+    page.locator(".excluded-row").click()
+    page.get_by_role("dialog").get_by_role("button", name="다시 넣기").click()
+    page.get_by_role("dialog").get_by_role("button", name="닫기").click()
+    check(page.locator(".excluded-row").count() == 0, "접힌 줄에서 다시 넣는다")
     page.get_by_role("tab", name=re.compile("^봐야 할 쪽")).click()
 
     page.evaluate("document.querySelector('.stage').scrollTop = 0")

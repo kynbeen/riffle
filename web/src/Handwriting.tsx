@@ -92,9 +92,9 @@ function tally(slots: Slot[], reasons: Record<number, Reason>, marks: Record<num
   for (const slot of slots) {
     const s = slot.source_index
     const watched = s !== null && s in reasons
-    const mark = watched ? marks[s!] : undefined
+    const mark = s !== null ? marks[s] : undefined          // 모든 쪽 보기에서 뺀 자동 쪽도 센다
     if (mark === 'excluded') { dropped += 1; continue }
-    if (mark === 'ok') checked += 1
+    if (watched && mark === 'ok') checked += 1
     if (s !== null && slot.target_index !== null) { if (!watched) automatic += 1 }
     else if (s === null) newPages += 1
     else { keptOld += 1; if (blank.has(s)) keptBlank += 1 }
@@ -161,16 +161,15 @@ function Ready({ review, initial, source, onUnsaved }: {
   // 저장할 쪽 대응. 확인할 쪽이 아닌 것은 기계가 맞춘 대로 둔다. 새 PDF 에 없는 옛 쪽은 필기가 없어도 남긴다(합집합).
   const plan = (): PlanRow[] => slots.map((slot) => {
     const s = slot.source_index
-    if (s !== null && s in reasons) {
-      return { ...slot, confirmed: marks[s] === 'ok', excluded: marks[s] === 'excluded' }
-    }
-    return { ...slot, confirmed: true, excluded: false }
+    const excluded = s !== null && marks[s] === 'excluded'
+    if (s !== null && s in reasons) return { ...slot, confirmed: marks[s] === 'ok', excluded }
+    return { ...slot, confirmed: true, excluded }
   })
 
   const key = JSON.stringify(plan())
   const changedSinceSave = saved !== null && saved.key !== key
   // 사람이 정한 것 — 카드에서 누른 것과 직접 고른 짝. 저장하지 않은 채 처음으로 가면 사라진다.
-  const decided = chosen.size > 0 || order.some((s) => marks[s] !== 'open')
+  const decided = chosen.size > 0 || Object.values(marks).some((mark) => mark !== 'open')
   const unsaved = decided && (saved === null || changedSinceSave)
   useEffect(() => { onUnsaved(unsaved) }, [unsaved, onUnsaved])
 
@@ -225,7 +224,8 @@ function Ready({ review, initial, source, onUnsaved }: {
 
       {view === 'all' && (
         <AllPages slots={slots} context={{ reasons, marks, chosen, blank, moved }} filter={filter} onFilter={setFilter}
-          previews={previews.current} />
+          previews={previews.current} thumbnails={thumbnails.current} targetCount={targetCount} closest={closest}
+          onPick={pick} onMark={(s, mark) => setMarks((prev) => ({ ...prev, [s]: mark }))} />
       )}
 
       {error && <div className="message error t-body">{error}</div>}
@@ -423,14 +423,27 @@ function Page({ label, background, ink, failed }: { label: string; background?: 
 }
 
 // 모든 쪽 — 결과 순서대로 필기를 얹은 쪽 그림. 표시는 사람이 알아 둘 것에만 붙는다(자동으로 맞춘 쪽은 표시 없음).
-// 사람이 뺀 쪽은 원래 자리에 접힌 줄로 둔다 — 따로 모으면 어디서 빠졌는지 모른다.
-function AllPages({ slots, context, filter, onFilter, previews }: {
+// 사람이 뺀 쪽은 원래 자리에 접힌 줄로 둔다 — 따로 모으면 어디서 빠졌는지 모른다. 쪽을 누르면 크게 보고 고친다(단위 4).
+function AllPages({ slots, context, filter, onFilter, previews, thumbnails, targetCount, closest, onPick, onMark }: {
   slots: Slot[]; context: Context; filter: Filter; onFilter: (filter: Filter) => void; previews: Map<string, Preview>
+  thumbnails: Map<number, string>; targetCount: number; closest: Record<number, number>
+  onPick: (source: number, target: number) => void; onMark: (source: number, mark: Mark) => void
 }) {
+  const [viewing, setViewing] = useState<number | null>(null)
+  const [follow, setFollow] = useState<number | null>(null)   // 다른 쪽으로 옮긴 옛 쪽 — 크게 보기가 따라간다
   const kinds = slots.map((slot) => kindOf(slot, context))
   const counts = countFilters(kinds)
   const filters = (Object.keys(FILTER_WORDS) as Filter[]).filter((key) => key === 'all' || counts[key] > 0)
   const shown = slots.map((slot, index) => ({ slot, kind: kinds[index] })).filter(({ kind }) => matches(kind, filter))
+  // 옮긴 필기가 얹힌 새 쪽으로 크게 보기를 옮긴다 — 방금 비운 쪽을 보여 주고 끝내지 않는다.
+  const followed = follow === null ? -1 : shown.findIndex(({ slot }) => slot.source_index === follow)
+  useEffect(() => {
+    if (follow === null) return
+    if (followed >= 0) setViewing(followed)
+    setFollow(null)
+  }, [follow, followed])
+  // 고친 쪽이 걸러 보기에서 빠지면 목록이 줄어든다 — 가리키던 자리를 목록 안으로 당긴다.
+  const at = viewing === null || shown.length === 0 ? null : Math.min(viewing, shown.length - 1)
   return (
     <>
       <div className="filters" role="group" aria-label="걸러 보기">
@@ -441,52 +454,147 @@ function AllPages({ slots, context, filter, onFilter, previews }: {
         ))}
       </div>
       <div className="page-grid">
-        {shown.map(({ slot, kind }) => kind === 'excluded'
-          ? <div className="excluded-row t-caption" key={`${slot.source_index}-x`}>옛 {slot.source_index! + 1}쪽 · 뺐습니다</div>
-          : <PageTile key={`${slot.source_index}-${slot.target_index}`} slot={slot} kind={kind} previews={previews} />)}
+        {shown.map(({ slot, kind }, index) => kind === 'excluded'
+          ? <button className="excluded-row t-caption" key={`${slot.source_index}-x`} onClick={() => setViewing(index)}>
+              옛 {slot.source_index! + 1}쪽 · 뺐습니다
+            </button>
+          : <PageTile key={`${slot.source_index}-${slot.target_index}`} slot={slot} kind={kind} previews={previews}
+              onOpen={() => setViewing(index)} />)}
       </div>
+      {at !== null && (
+        <PageViewer items={shown} at={at} previews={previews} thumbnails={thumbnails} targetCount={targetCount}
+          closest={closest} onMove={setViewing} onClose={() => setViewing(null)}
+          onPick={(source, target) => { onPick(source, target); setFollow(source) }} onMark={onMark} />
+      )}
     </>
   )
 }
 
-// 격자의 한 쪽. 보일 때만 그림을 부른다 — 97쪽을 한 번에 만들지 않는다.
-function PageTile({ slot, kind, previews }: { slot: Slot; kind: PageKind; previews: Map<string, Preview> }) {
-  const s = slot.source_index, t = slot.target_index
-  const key = `${t ?? -1}:${s ?? -1}`
-  const [view, setView] = useState<Preview | null>(() => previews.get(key) ?? null)
-  const [failed, setFailed] = useState(false)
-  const box = useRef<HTMLElement>(null)
+// 미리보기 한 장. 카드·격자·크게 보기가 같은 저장소(previews)를 나눠 쓴다 — 한 번 부른 쪽은 다시 부르지 않는다.
+function usePreview(targetIndex: number, sourceIndex: number, previews: Map<string, Preview>, wanted: boolean) {
+  const key = `${targetIndex}:${sourceIndex}`
+  const [state, setState] = useState<{ key: string; view: Preview | null; failed: boolean }>(
+    () => ({ key, view: previews.get(key) ?? null, failed: false }))
+  const current = state.key === key ? state : { key, view: previews.get(key) ?? null, failed: false }
   useEffect(() => {
-    if (view || !box.current) return
+    if (!wanted || current.view) return
     const stop = new AbortController()
+    backend.preview(targetIndex, sourceIndex, stop.signal)
+      .then((view) => { previews.set(key, view); setState({ key, view, failed: false }) })
+      .catch(() => { if (!stop.signal.aborted) setState({ key, view: null, failed: true }) })
+    return () => stop.abort()
+  }, [key, wanted, current.view, previews, targetIndex, sourceIndex])
+  return current
+}
+
+function pageLabel(slot: Slot, kind: PageKind): string {
+  const s = slot.source_index, t = slot.target_index
+  if (t === null) return `옛 ${s! + 1}쪽`
+  return s === null || kind === 'auto' ? `새 ${t + 1}쪽` : `새 ${t + 1}쪽 · 옛 ${s + 1}쪽 필기`
+}
+
+// 격자의 한 쪽. 보일 때만 그림을 부른다 — 97쪽을 한 번에 만들지 않는다.
+function PageTile({ slot, kind, previews, onOpen }: {
+  slot: Slot; kind: PageKind; previews: Map<string, Preview>; onOpen: () => void
+}) {
+  const s = slot.source_index, t = slot.target_index
+  const [visible, setVisible] = useState(false)
+  const box = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (visible || !box.current) return
     const observer = new IntersectionObserver((entries) => {
-      if (!entries.some((entry) => entry.isIntersecting)) return
-      observer.disconnect()
-      backend.preview(t ?? -1, s ?? -1, stop.signal)
-        .then((result) => { previews.set(key, result); setView(result) })
-        .catch(() => { if (!stop.signal.aborted) setFailed(true) })
+      if (entries.some((entry) => entry.isIntersecting)) { observer.disconnect(); setVisible(true) }
     }, { rootMargin: '400px 0px' })
     observer.observe(box.current)
-    return () => { observer.disconnect(); stop.abort() }
-  }, [key, view, previews, s, t])
+    return () => observer.disconnect()
+  }, [visible])
+  const { view, failed } = usePreview(t ?? -1, s ?? -1, previews, visible)
   const background = t === null ? view?.before : view?.after
-  const label = t === null ? `옛 ${s! + 1}쪽` : s === null || kind === 'auto' ? `새 ${t + 1}쪽` : `새 ${t + 1}쪽 · 옛 ${s + 1}쪽 필기`
+  const label = pageLabel(slot, kind)
   return (
-    <figure className={`page-tile ${kind}`} ref={box}>
-      <div className="sheet-of-paper">
+    <button className={`page-tile ${kind}`} ref={box} onClick={onOpen} aria-label={`${label} 크게 보기`}>
+      <span className="sheet-of-paper">
         {background ? (
           <>
-            <img src={background} alt={label} />
+            <img src={background} alt="" />
             {s !== null && view?.ink && <img className="ink" src={view.ink} alt="" aria-hidden />}
           </>
         ) : (
-          <div className="placeholder t-caption">{failed ? '미리보기를 만들지 못했습니다' : ''}</div>
+          <span className="placeholder t-caption">{failed ? '미리보기를 만들지 못했습니다' : ''}</span>
         )}
-      </div>
-      <figcaption>
+      </span>
+      <span className="page-caption">
         <span className="t-caption">{label}</span>
         {KIND_WORDS[kind] && <span className={`badge ${kind}`}>{KIND_WORDS[kind]}</span>}
-      </figcaption>
-    </figure>
+      </span>
+    </button>
+  )
+}
+
+// 크게 보기 — 옛 쪽(옛 필기 그대로)과 새 쪽(옮긴 필기)을 크게 나란히. 카드와 같은 단추로 고친다.
+// Mac 의 Quick Look 자리. 넘기기는 화면 단추로 한다(키보드 단축키를 두지 않는다 — 닫는 Esc 만).
+function PageViewer({ items, at, previews, thumbnails, targetCount, closest, onMove, onClose, onPick, onMark }: {
+  items: { slot: Slot; kind: PageKind }[]; at: number; previews: Map<string, Preview>; thumbnails: Map<number, string>
+  targetCount: number; closest: Record<number, number>; onMove: (at: number) => void; onClose: () => void
+  onPick: (source: number, target: number) => void; onMark: (source: number, mark: Mark) => void
+}) {
+  const { slot, kind } = items[at]
+  const s = slot.source_index, t = slot.target_index
+  const [picking, setPicking] = useState(false)
+  const dialog = useRef<HTMLDivElement>(null)
+  useEffect(() => { dialog.current?.focus() }, [])
+  useEffect(() => { setPicking(false) }, [at])
+  const old = usePreview(-1, s ?? -1, previews, s !== null)
+  const moved = usePreview(t ?? -1, s ?? -1, previews, t !== null)
+  const label = pageLabel(slot, kind)
+  return (
+    <div className="viewer-backdrop" role="dialog" aria-modal="true" aria-label={label}
+      onKeyDown={(event) => { if (event.key === 'Escape') onClose() }}>
+      <div className="viewer" ref={dialog} tabIndex={-1}>
+        <div className="viewer-head">
+          <div className="viewer-title">
+            <span className="t-title">{label}</span>
+            {KIND_WORDS[kind] && <span className={`badge ${kind}`}>{KIND_WORDS[kind]}</span>}
+          </div>
+          <span className="t-caption">{at + 1} / {items.length}</span>
+          <button className="button quiet" onClick={onClose}>닫기</button>
+        </div>
+        <div className="viewer-pages">
+          {s !== null && (
+            <Page label={`옛 ${s + 1}쪽`} background={old.view?.before} ink={old.view?.ink} failed={old.failed ? '실패' : ''} />
+          )}
+          {t !== null && (
+            <Page label={s === null ? `새 ${t + 1}쪽 · 필기 없음` : `새 ${t + 1}쪽 · 필기를 얹은 모습`}
+              background={moved.view?.after} ink={s === null ? undefined : moved.view?.ink} failed={moved.failed ? '실패' : ''} />
+          )}
+        </div>
+        <div className="viewer-foot">
+          <div className="actions">
+            {s === null ? (
+              <span className="t-caption">새 PDF에서 새로 생긴 쪽입니다. 얹을 옛 필기가 없습니다.</span>
+            ) : kind === 'excluded' ? (
+              <button className="button" onClick={() => onMark(s, 'open')}>다시 넣기</button>
+            ) : (
+              <>
+                {kind === 'watch' && (
+                  <button className="button" onClick={() => onMark(s, 'ok')}>{t === null ? '남기기' : '맞아요'}</button>
+                )}
+                <button className="button quiet" onClick={() => setPicking((now) => !now)}>다른 쪽</button>
+                <button className="button quiet" onClick={() => onMark(s, 'excluded')}>빼기</button>
+              </>
+            )}
+          </div>
+          <div className="actions">
+            <button className="button quiet" disabled={at === 0} onClick={() => onMove(at - 1)}>이전</button>
+            <button className="button quiet" disabled={at === items.length - 1} onClick={() => onMove(at + 1)}>다음</button>
+          </div>
+        </div>
+        {picking && s !== null && (
+          <TargetPicker count={targetCount} current={t} start={t ?? closest[s] ?? null} similar={closest[s]}
+            thumbnails={thumbnails} onPick={(target) => { setPicking(false); onPick(s, target) }}
+            onClose={() => setPicking(false)} />
+        )}
+      </div>
+    </div>
   )
 }

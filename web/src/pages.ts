@@ -27,10 +27,11 @@ export interface Context {
 export function kindOf(slot: Slot, context: Context): PageKind {
   const s = slot.source_index
   if (s === null) return 'new'
+  // 사람이 뺀 쪽·직접 고른 짝은 카드에 올랐든 아니든(모든 쪽 보기에서 고친 것) 사람 쪽이 이긴다(원칙 7).
+  if (context.marks[s] === 'excluded') return 'excluded'
+  if (context.chosen.has(s)) return 'chosen'
   if (s in context.reasons) {
     const mark = context.marks[s]
-    if (mark === 'excluded') return 'excluded'
-    if (context.chosen.has(s)) return 'chosen'
     if (mark === 'ok') return slot.target_index === null ? (context.blank.has(s) ? 'kept_blank' : 'kept') : 'checked'
     return 'watch'
   }

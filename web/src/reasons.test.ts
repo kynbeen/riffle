@@ -20,6 +20,12 @@ test('새 쪽과 뺀 쪽은 할 일 없이 알리기만 한다', () => {
   ])
 })
 
+test('어떤 이유 문장도 빼기를 권하지 않는다 — 빼면 손필기가 결과에서 빠진다', () => {
+  for (const words of Object.values(REASON_WORDS)) {
+    assert.doesNotMatch(words.title + words.detail, /빼도|빼세요|빼 주세요/)
+  }
+})
+
 test('이유 문장에 숫자·내부 용어가 없다', () => {
   for (const words of Object.values(REASON_WORDS)) {
     const text = words.title + words.detail

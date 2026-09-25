@@ -178,9 +178,19 @@ button, input { font: inherit; color: inherit; }
 .all-list li.attention .t-caption { color: var(--accent); font-weight: 600; }
 
 .savebar { display: flex; gap: 16px; align-items: center; justify-content: flex-end; }
+/* 필기 옮기기의 저장 막대 — 화면 아래에 붙어 늘 보인다(명세 2026-09-25-01) */
+.footer {
+  /* .stage 의 아래 여백(48px)만큼 내려야 막대 아래로 내용이 비치지 않는다 */
+  position: sticky; bottom: -48px; z-index: 1;
+  padding: 12px 0; background: var(--bg); border-top: 1px solid var(--line);
+}
+.card-row {
+  display: flex; align-items: center; gap: 16px; padding: 8px 16px; border-radius: 12px; background: var(--bg-raised);
+}
+.card-row .t-caption { flex: 1; }
 .saved { display: grid; gap: 8px; padding: 16px; border-radius: 16px; background: var(--bg-raised); }
 
-.sheet-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.18); display: grid; place-items: center; padding: 16px; }
+.sheet-backdrop { position: fixed; inset: 0; z-index: 10; background: rgba(0, 0, 0, 0.18); display: grid; place-items: center; padding: 16px; }
 .sheet {
   width: min(420px, 100%); display: grid; gap: 12px; padding: 24px; border-radius: 16px;
   background: var(--bg); box-shadow: var(--shadow);

@@ -4,6 +4,7 @@ import Handwriting from './Handwriting'
 import Merge from './Merge'
 import type { Doc } from './merging'
 import { decide } from './classify'
+import Sheet from './Sheet'
 
 // 첫 화면은 놓는 곳 하나다. 놓은 파일로 할 일을 정하고(classify.ts), 곧바로 시작한다(명세 2026-09-24-01).
 
@@ -16,22 +17,34 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>({ kind: 'drop' })
   const [version, setVersion] = useState('')
   useEffect(() => { backend.health().then((reply) => setVersion(reply.version)).catch(() => {}) }, [])
+  // 사람이 정한 것을 저장하지 않았으면 처음으로 가기 전에 한 번 묻는다. 원본은 남아도 판단은 사라진다(원칙 7).
+  const [unsaved, setUnsaved] = useState(false)
+  const [asking, setAsking] = useState(false)
   // 화면을 먼저 닫아 남은 미리보기 요청을 거둔 뒤 서버를 비운다(거꾸로 하면 늦게 온 요청이 실패로 남는다).
-  const back = useCallback(async () => {
+  const leave = useCallback(async () => {
+    setAsking(false)
+    setUnsaved(false)
     setScreen({ kind: 'drop' })
     try { await backend.reset() } catch { /* 비우기에 실패해도 첫 화면으로는 돌아간다 */ }
   }, [])
+  const back = () => (unsaved ? setAsking(true) : void leave())
   return (
     <div className="app">
       <header className="topbar">
-        {screen.kind !== 'drop' && <button className="back" onClick={back} aria-label="처음으로">←</button>}
+        {screen.kind !== 'drop' && <button className="back" onClick={back} aria-label="처음으로" title="처음으로">←</button>}
         <span className="wordmark" title={version ? `Riffle ${version}` : undefined}>Riffle</span>
       </header>
       <main className="stage">
         {screen.kind === 'drop' && <DropScreen onStart={setScreen} />}
-        {screen.kind === 'handwriting' && <Handwriting source={screen.source} target={screen.target} />}
+        {screen.kind === 'handwriting' && <Handwriting source={screen.source} target={screen.target} onUnsaved={setUnsaved} />}
         {screen.kind === 'merge' && <Merge initial={screen.docs} />}
       </main>
+      {asking && (
+        <Sheet title="정한 것을 저장하지 않았습니다" cancel="돌아가기" confirm="처음으로"
+          onCancel={() => setAsking(false)} onConfirm={() => void leave()}>
+          처음으로 가면 카드에서 정한 것이 사라집니다. 옛 필기 파일과 새 PDF는 그대로 남아 있습니다.
+        </Sheet>
+      )}
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { backend, type HandwritingStatus, type PlanRow, type PlanSlot, type Preview, type Saved } from './api'
 import { reassign, targetOf, type Slot } from './plan'
 import { footnotes, headline, REASON_WORDS, type Reason, type Review, type ReviewSummary } from './reasons'
+import Sheet from './Sheet'
 
 // 필기 옮기기 — 확인할 쪽만(명세 2026-09-24-01). 기계가 자신 있게 맞춘 쪽은 목록에 없고,
 // 모든 쪽은 궁금할 때만 펼쳐 본다.
@@ -16,10 +17,27 @@ const STAGE_WORDS: Record<string, string> = {
 
 type Mark = 'open' | 'ok' | 'excluded'
 
-export default function Handwriting({ source, target }: { source: string; target: string }) {
+export default function Handwriting({ source, target, onUnsaved }: {
+  source: string; target: string; onUnsaved: (unsaved: boolean) => void
+}) {
   const [status, setStatus] = useState<HandwritingStatus | null>(null)
   const [failure, setFailure] = useState('')
   const [retries, setRetries] = useState(0)
+  const [dropped, setDropped] = useState(false)
+
+  // 이 화면에 놓인 파일은 받지 않는다. 막지 않으면 웹 브라우저가 그 파일을 열어 검토하던 것이 통째로 사라진다(원칙 7).
+  useEffect(() => {
+    const over = (event: DragEvent) => event.preventDefault()
+    const drop = (event: DragEvent) => { event.preventDefault(); setDropped(true) }
+    window.addEventListener('dragover', over)
+    window.addEventListener('drop', drop)
+    window.__riffleDropped = () => setDropped(true)
+    return () => {
+      window.removeEventListener('dragover', over)
+      window.removeEventListener('drop', drop)
+      window.__riffleDropped = undefined
+    }
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -47,6 +65,11 @@ export default function Handwriting({ source, target }: { source: string; target
       {source.toLowerCase().endsWith('.goodnotes') && (
         <div className="t-caption">Goodnotes 옮기기는 아직 실험 단계입니다. 저장한 파일을 Goodnotes에서 열어 확인해 주세요.</div>
       )}
+      {dropped && (
+        <div className="note t-body" role="status">
+          지금은 필기를 옮기는 중입니다. 다른 파일로 시작하려면 ← 로 처음으로 가세요.
+        </div>
+      )}
       {failure && <div className="message error t-body">{failure}</div>}
       {analysis?.state === 'error' ? (
         <>
@@ -54,7 +77,7 @@ export default function Handwriting({ source, target }: { source: string; target
           <div><button className="button" onClick={async () => { await backend.retryHandwriting(); setRetries((n) => n + 1) }}>다시 시도</button></div>
         </>
       ) : analysis?.state === 'ready' && status?.review && status.inspection?.plan ? (
-        <Ready review={status.review} initial={status.inspection.plan.slots} source={source} />
+        <Ready review={status.review} initial={status.inspection.plan.slots} source={source} onUnsaved={onUnsaved} />
       ) : (
         <div className="status t-body"><span className="spinner" aria-hidden /><span>{STAGE_WORDS[analysis?.stage ?? 'waiting'] ?? '맞추는 중'}</span></div>
       )}
@@ -82,7 +105,11 @@ function tally(slots: Slot[], reasons: Record<number, Reason>, marks: Record<num
            omitted, result_pages: resultPages, checked, dropped }
 }
 
-function Ready({ review, initial, source }: { review: Review; initial: PlanSlot[]; source: string }) {
+type Counts = ReturnType<typeof tally>
+
+function Ready({ review, initial, source, onUnsaved }: {
+  review: Review; initial: PlanSlot[]; source: string; onUnsaved: (unsaved: boolean) => void
+}) {
   const blank = useMemo(() => new Set(review.blank_sources), [review])
   const [slots, setSlots] = useState<Slot[]>(() => initial.map(({ source_index, target_index }) => ({ source_index, target_index })))
   // 확인할 옛 쪽 → 이유. 카드 순서는 order 가 쥔다(짝을 바꾸면 밀려난 옛 쪽이 새 카드로 붙는다).
@@ -94,7 +121,8 @@ function Ready({ review, initial, source }: { review: Review; initial: PlanSlot[
   const [chosen, setChosen] = useState<Set<number>>(new Set())      // 사람이 직접 짝을 고른 옛 쪽
   const [asking, setAsking] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState<Saved | null>(null)
+  // 저장한 순간의 결과·숫자·쪽 대응. 요약은 이 숫자로 말한다 — 저장 뒤에 바꾼 것을 저장한 것처럼 말하지 않는다(원칙 5).
+  const [saved, setSaved] = useState<{ result: Saved; counts: Counts; key: string } | null>(null)
   const [error, setError] = useState('')
   const [showAll, setShowAll] = useState(false)
   const thumbnails = useRef(new Map<number, string>())
@@ -126,14 +154,23 @@ function Ready({ review, initial, source }: { review: Review; initial: PlanSlot[
     return { ...slot, confirmed: true, excluded: s !== null && slot.target_index === null && blank.has(s) }
   })
 
+  const key = JSON.stringify(plan())
+  const changedSinceSave = saved !== null && saved.key !== key
+  // 사람이 정한 것 — 카드에서 누른 것과 직접 고른 짝. 저장하지 않은 채 처음으로 가면 사라진다.
+  const decided = chosen.size > 0 || order.some((s) => marks[s] !== 'open')
+  const unsaved = decided && (saved === null || changedSinceSave)
+  useEffect(() => { onUnsaved(unsaved) }, [unsaved, onUnsaved])
+
   const save = async (allowUnconfirmed: boolean) => {
     setAsking(false)
     setSaving(true)
     setError('')
+    const rows = plan()
+    const snapshot = counts
     try {
       const name = `${source.replace(/\.[^.]+$/, '')}-필기`
-      const result = await backend.saveHandwriting(name, plan(), allowUnconfirmed)
-      if (result.saved) setSaved(result)
+      const result = await backend.saveHandwriting(name, rows, allowUnconfirmed)
+      if (result.saved) setSaved({ result, counts: snapshot, key: JSON.stringify(rows) })
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -148,12 +185,15 @@ function Ready({ review, initial, source }: { review: Review; initial: PlanSlot[
 
       {order.length > 0 && (
         <div className="cards">
-          {order.map((s) => (
-            <Card key={s} source={s} target={targetOf(slots, s)} reason={reasons[s]} mark={marks[s]}
-              chosen={chosen.has(s)} targetCount={targetCount} thumbnails={thumbnails.current}
-              onMark={(mark) => setMarks((prev) => ({ ...prev, [s]: mark }))}
-              onPick={(target) => pick(s, target)} />
-          ))}
+          {order.map((s) => {
+            const onMark = (mark: Mark) => setMarks((prev) => ({ ...prev, [s]: mark }))
+            // 누른 카드는 한 줄로 접어 남은 카드가 올라오게 한다. 직접 고른 짝은 얹힌 모습을 봐야 하니 펼쳐 둔다.
+            return marks[s] !== 'open' && !chosen.has(s)
+              ? <CardRow key={s} source={s} target={targetOf(slots, s)} mark={marks[s]} onMark={onMark} />
+              : <Card key={s} source={s} target={targetOf(slots, s)} reason={reasons[s]} mark={marks[s]}
+                  chosen={chosen.has(s)} targetCount={targetCount} thumbnails={thumbnails.current}
+                  onMark={onMark} onPick={(target) => pick(s, target)} />
+          })}
         </div>
       )}
 
@@ -163,38 +203,37 @@ function Ready({ review, initial, source }: { review: Review; initial: PlanSlot[
       </details>
 
       {error && <div className="message error t-body">{error}</div>}
-      {saved ? (
-        <div className="saved">
-          <div className="t-body"><b>저장했습니다</b>{saved.name ? ` · ${saved.name}` : ''}</div>
-          <div className="t-caption">
-            {`자동 ${counts.automatic} · 확인 ${counts.checked} · 옛 쪽째 남김 ${counts.kept_old} · 뺀 쪽 ${counts.omitted + counts.dropped}`}
+      {/* 저장 막대는 화면 아래에 붙어 늘 보인다 — 카드가 많아도 스크롤 끝까지 찾으러 가지 않는다. */}
+      <div className="footer">
+        {saved && !changedSinceSave ? (
+          <div className="saved">
+            <div className="t-body"><b>저장했습니다</b>{saved.result.name ? ` · ${saved.result.name}` : ''}</div>
+            <div className="t-caption">
+              {`자동 ${saved.counts.automatic} · 확인 ${saved.counts.checked} · 옛 쪽째 남김 ${saved.counts.kept_old} · 뺀 쪽 ${saved.counts.omitted + saved.counts.dropped}`}
+            </div>
+            {/* 필기 옮기기 결과의 경고는 "확인 안 한 쪽을 승인하고 저장함" 하나뿐이고, 위 요약 줄이 이미 말한다. */}
+            {saved.result.path && backend.openFolder && (
+              <div><button className="button quiet" onClick={() => backend.openFolder!(saved.result.path!)}>폴더 열기</button></div>
+            )}
           </div>
-          {/* 필기 옮기기 결과의 경고는 "확인 안 한 쪽을 승인하고 저장함" 하나뿐이고, 위 요약 줄이 이미 말한다. */}
-          {saved.path && backend.openFolder && (
-            <div><button className="button quiet" onClick={() => backend.openFolder!(saved.path!)}>폴더 열기</button></div>
-          )}
-        </div>
-      ) : (
-        <div className="savebar">
-          {open > 0 && <span className="t-caption">{open}쪽을 아직 보지 않았습니다</span>}
-          <button className="button" disabled={saving} onClick={() => (open > 0 ? setAsking(true) : void save(false))}>
-            {saving ? '저장하는 중' : '새 파일로 저장'}
-          </button>
-        </div>
-      )}
+        ) : (
+          <div className="savebar">
+            <span className="t-caption">
+              {[changedSinceSave ? '저장한 뒤 바꾼 것이 있습니다' : '', open > 0 ? `${open}쪽을 아직 보지 않았습니다` : '']
+                .filter(Boolean).join(' · ')}
+            </span>
+            <button className="button" disabled={saving} onClick={() => (open > 0 ? setAsking(true) : void save(false))}>
+              {saving ? '저장하는 중' : '새 파일로 저장'}
+            </button>
+          </div>
+        )}
+      </div>
 
       {asking && (
-        <div className="sheet-backdrop" role="dialog" aria-modal="true" aria-label="확인하지 않은 쪽"
-          onKeyDown={(event) => { if (event.key === 'Escape') setAsking(false) }}>
-          <div className="sheet">
-            <div className="t-title">{open}쪽을 아직 보지 않았습니다</div>
-            <div className="t-body">기계가 맞춘 대로 저장합니다. 옛 필기 파일은 그대로 남아 있어 언제든 다시 옮길 수 있습니다.</div>
-            <div className="sheet-actions">
-              <button className="button quiet" autoFocus onClick={() => setAsking(false)}>돌아가기</button>
-              <button className="button" onClick={() => void save(true)}>그대로 저장</button>
-            </div>
-          </div>
-        </div>
+        <Sheet title={`${open}쪽을 아직 보지 않았습니다`} cancel="돌아가기" confirm="그대로 저장"
+          onCancel={() => setAsking(false)} onConfirm={() => void save(true)}>
+          기계가 맞춘 대로 저장합니다. 옛 필기 파일은 그대로 남아 있어 언제든 다시 옮길 수 있습니다.
+        </Sheet>
       )}
     </>
   )
@@ -260,6 +299,21 @@ function Card({ source, target, reason, mark, chosen, targetCount, thumbnails, o
           onPick={(chosenTarget) => { setPicking(false); onPick(chosenTarget) }}
           onClose={() => setPicking(false)} />
       )}
+    </article>
+  )
+}
+
+// 정한 카드는 한 줄로. 무엇을 정했는지와 되돌리는 단추만 남긴다.
+function CardRow({ source, target, mark, onMark }: {
+  source: number; target: number | null; mark: Mark; onMark: (mark: Mark) => void
+}) {
+  const pair = target === null ? `옛 ${source + 1}쪽` : `옛 ${source + 1}쪽 → 새 ${target + 1}쪽`
+  const state = mark === 'excluded' ? '결과에서 뺐습니다' : target === null ? '옛 쪽째 남깁니다' : '확인했습니다'
+  return (
+    <article className="card-row">
+      <span className="t-body">{pair}</span>
+      <span className="t-caption">{state}</span>
+      <button className="button quiet" onClick={() => onMark('open')}>{mark === 'excluded' ? '다시 넣기' : '되돌리기'}</button>
     </article>
   )
 }

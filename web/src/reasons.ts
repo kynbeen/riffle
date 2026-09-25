@@ -9,7 +9,8 @@ export const REASON_WORDS: Record<Reason, { title: string; detail: string }> = {
   },
   old_only: {
     title: '새 PDF에 없는 쪽입니다',
-    detail: '필기를 잃지 않게 옛 쪽째 남깁니다. 새 PDF의 다른 쪽과 같은 쪽이라면 빼도 됩니다.',
+    // 빼기를 권하지 않는다 — 빼면 이 쪽의 손필기가 결과에 들어가지 않는다(원칙 7, 명세 2026-09-25-01).
+    detail: '필기를 잃지 않게 옛 쪽째 남깁니다. 새 PDF에 같은 쪽이 있으면 「다른 쪽」에서 골라 주세요. 필기가 그 쪽에 얹힙니다.',
   },
   different: {
     title: '비슷하지만 달라진 곳이 있습니다',

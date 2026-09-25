@@ -4,7 +4,8 @@ Sleek 아이콘(`sleek/pipeline/gui/branding.icon_svg`)의 틀을 그대로 쓴�
 반지름 54 인 **흰 둥근 사각형**, 옅은 회색(#e3e3e8) 테두리 3, 가운데에 **굵은 검은 선 그림** 하나. 두 앱을 오가는 사람이
 같은 식구로 알아보게 한다(UX 철학 원칙 8).
 
-그림은 **부채꼴로 펼쳐진 종이 세 장** — riffle(책장을 훌훌 넘긴다). 쪽을 다루는 앱임을 말한다. 맨 앞 장에는 글줄 셋.
+그림은 **나란히 겹쳐 왼쪽 아래로 내려오는 종이 세 장** — riffle(책장을 훌훌 넘긴다). 쪽을 다루는 앱임을 말한다.
+맨 앞 장에는 글줄 셋. (처음 판은 부채꼴로 기울인 종이였다 — 사용자 요청으로 평행하게 바꿈, 2026-09-25)
 큰 캔버스에 그린 뒤 줄여, 작업 표시줄의 작은 크기에서도 선이 매끈하다. 선 굵기는 모든 크기가 같다(Sleek 과 같은 원칙).
 """
 from __future__ import annotations
@@ -45,15 +46,13 @@ def _render_icon() -> Image.Image:
                            fill=_PAPER, outline=_RIM, width=round(3 * unit))
 
     stroke = round(9 * unit)
-    # 맨 앞 장은 세로로 서고, 뒤 두 장은 왼쪽 아래 모서리를 축으로 12°·24° 씩 왼쪽으로 기운다.
-    left, top, right, bottom = 104 * unit, 50 * unit, 196 * unit, 192 * unit
-    pivot = (left, bottom)
+    # 종이 세 장이 기울지 않고 나란히, 왼쪽 아래로 한 칸씩 내려오며 겹친다(사용자 요청 2026-09-25). 맨 앞(왼쪽 아래) 장에 글줄.
+    width, height, step = 88 * unit, 118 * unit, 18 * unit
+    left, top = 60 * unit, 40 * unit
     mark = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    for angle, lines in ((24, False), (12, False), (0, True)):
-        page = _page(size, (left, top, right, bottom), stroke, lines)
-        if angle:
-            page = page.rotate(angle, resample=Image.Resampling.BICUBIC, center=pivot)
-        mark.alpha_composite(page)
+    for back, lines in ((2, False), (1, False), (0, True)):
+        x0, y0 = left + back * step, top + (2 - back) * step       # 뒤 장일수록 오른쪽 위
+        mark.alpha_composite(_page(size, (x0, y0, x0 + width, y0 + height), stroke, lines))
     # 그림을 틀 가운데로 옮긴다.
     x0, y0, x1, y1 = mark.getbbox()
     centered = Image.new("RGBA", (size, size), (0, 0, 0, 0))

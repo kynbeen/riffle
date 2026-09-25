@@ -16,7 +16,7 @@ from .ink_transform import canvas_transform
 from .page_match import MatchResult
 from .page_plan import PagePlan
 from .sdocx_note import PageOrder, PageOrderEntry, patch_note_height, read_note, read_page_order
-from .sdocx_page import PageInfo, is_blank_page, patch_page, read_page
+from .sdocx_page import PageInfo, blank_copy, is_blank_page, patch_page, read_page
 from .sdocx_ink import transform_page_ink
 from .sdocx_end_tag import read_end_tag
 from .sdocx_transfer import (
@@ -160,6 +160,11 @@ def _read_source_pages(
         "원본 PDF의 각 쪽에 대응하는 .page 파일을 정확히 하나씩 찾을 수 없습니다.",
     )
     template = min(blank_templates, key=lambda page: len(page.blob), default=None)
+    if template is None and pdf_pages:
+        # 모든 쪽에 필기가 있는 노트 — 가장 작은 쪽을 본떠 빈 쪽을 만든다(zip 머리도 그 쪽 것을 본뜬다).
+        model = min(pdf_pages.values(), key=lambda page: len(page.blob))
+        emptied = blank_copy(model.blob)
+        template = _SourcePage(model.name, emptied, read_page(emptied))
     return order, pdf_pages, supplemental, template
 
 

@@ -225,6 +225,57 @@ def is_blank_page(blob: bytes) -> bool:
     return True
 
 
+def blank_copy(blob: bytes) -> bytes:
+    """필기 쪽 하나를 본떠 **빈 쪽**을 만든다 — 새로 생긴 쪽을 만들 빈 쪽이 노트에 없을 때(모든 쪽에 필기가 있는 노트).
+
+    실측(2026-09-26): 빈 쪽은 속성이 바탕색·바탕 폭·PDF 배경(0x160)뿐이고, 필기 쪽은 여기에 그린 범위(0x1)와 펜 캐시(0x400)가
+    더 붙는다. 그래서 레이어의 객체를 모두 걷고, 그린 범위와 펜 캐시 참조도 걷는다 — 펜 캐시를 남기면 새 빈 쪽에 원래 쪽의 필기
+    그림이 비칠 수 있다. 레이어 머리와 끝 32바이트, 나머지 속성은 그대로 둔다.
+    """
+    from .sdocx_ink import layer_objects
+
+    info = read_page(blob)
+    mask = info.property_mask
+    remove: list[tuple[int, int]] = []
+    if mask & _MASK_DRAWN_RECT:
+        remove.append((info.property_offset, info.property_offset + 32))
+    if mask & _MASK_CANVAS_CACHE:
+        # 속성은 비트 순서대로 놓인다 — 펜 캐시 앞 비트들만 훑은 끝이 곧 펜 캐시의 시작이다.
+        start, *_rest = _walk_properties(blob, mask & (_MASK_CANVAS_CACHE - 1), info.property_offset,
+                                         info.format_version)
+        count, record_size = struct.unpack_from("<IH", blob, start)
+        remove.append((start, start + 6 + count * record_size))
+    remove += [(start, end) for _layer, start, end in layer_objects(blob)]
+
+    # 레이어마다 객체 수를 0으로.
+    counts = []
+    position = info.layer_offset
+    layer_count = struct.unpack_from("<H", blob, position)[0]
+    position += 4
+    spans = layer_objects(blob)
+    for layer in range(layer_count):
+        header_size = struct.unpack_from("<I", blob, position)[0]
+        counts.append(position + header_size)
+        inside = [span for span in spans if span[0] == layer]
+        position = (inside[-1][2] if inside else position + header_size + 4) + 32
+
+    patched = bytearray(blob)
+    for at in counts:
+        struct.pack_into("<I", patched, at, 0)
+    struct.pack_into("<I", patched, 0x0E, mask & ~(_MASK_DRAWN_RECT | _MASK_CANVAS_CACHE))
+    removed_before_layers = sum(end - start for start, end in remove if end <= info.layer_offset)
+    struct.pack_into("<I", patched, 0x00, info.layer_offset - removed_before_layers)
+    out = bytearray()
+    cursor = 0
+    for start, end in sorted(remove):
+        out += patched[cursor:start]
+        cursor = end
+    out += patched[cursor:]
+    result = bytes(out)
+    _require(is_blank_page(result), "필기 쪽을 본떠 빈 쪽을 만들지 못했습니다.")
+    return result
+
+
 def patch_page(
     blob: bytes,
     *,

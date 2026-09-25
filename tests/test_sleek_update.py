@@ -301,6 +301,36 @@ class SleekUpdateTests(unittest.TestCase):
         self.assertAlmostEqual(first[1], underline[0][1], delta=0.5)
 
 
+class EveryPageInkedTests(unittest.TestCase):
+    """모든 쪽에 필기가 있는 노트에서 사람이 짝을 바꿔 새 쪽이 비면, 본뜰 빈 쪽이 없다(2026-09-26 진단에서 찾음).
+    필기 쪽을 본떠 빈 쪽을 만들어 저장한다 — 전에는 「빈 PDF 페이지 템플릿이 없습니다」로 저장이 멈췄다."""
+
+    def test_moving_a_page_saves_when_no_blank_page_exists(self):
+        from tests.test_page_match import make_document as slides_pdf
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            slides = slides_pdf(root / "slides.pdf", SEEDS[:3])
+            source = root / "old.sdocx"
+            notes_sdocx(source, slides, {0: [stroke(100, 100)], 1: [stroke(200, 200)], 2: [stroke(300, 300)]})
+            inspection = inspect_transfer(source, slides)
+            # 사람이 옛 1쪽 필기를 새 2쪽으로 — 새 1쪽은 빈 쪽이 되고, 새 2쪽에 있던 옛 2쪽은 옛 쪽째 남는다.
+            rows = [
+                {"source_index": None, "target_index": 0, "confirmed": True, "excluded": False},
+                {"source_index": 0, "target_index": 1, "confirmed": True, "excluded": False},
+                {"source_index": 1, "target_index": None, "confirmed": True, "excluded": False},
+                {"source_index": 2, "target_index": 2, "confirmed": True, "excluded": False},
+            ]
+            plan = PagePlan.from_payload(3, 3, rows, inspection.match)
+            output = root / "moved.sdocx"
+            transfer_handwriting(source, slides, output, plan_override=plan)
+            pages = saved_pages(output)
+        counts = [len(read_ink_strokes(blob)[2]) for blob in pages]
+        self.assertEqual(counts, [0, 1, 1, 1])
+        self.assertEqual(read_page(pages[0]).property_mask & 0x401, 0)          # 그린 범위·펜 캐시 참조 없음
+        self.assertEqual(read_ink_strokes(pages[1])[2][0].points[0], (100.0, 100.0))
+
+
 class NotewiseSleekUpdateTests(unittest.TestCase):
     """Samsung Notes 와 같은 계획을 Notewise 도 그대로 저장한다(요청 6)."""
 

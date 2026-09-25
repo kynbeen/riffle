@@ -324,6 +324,7 @@ def inspect_notewise_transfer(
         match=match,
         moved_sources=reorder.moved,
         pair_candidates=tuple(sorted(reorder.candidates.items())),
+        closest_targets=tuple(sorted(reorder.closest.items())),
     )
 
 

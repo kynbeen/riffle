@@ -43,6 +43,7 @@ class TransferInspection:
     # 새 판에서 순서가 바뀌어 다시 짝지은 옛 쪽, 닮았지만 애매해 사람에게 보일 옛 쪽 → 새 쪽(reorder.py)
     moved_sources: tuple[int, ...] = ()
     pair_candidates: tuple[tuple[int, int], ...] = ()
+    closest_targets: tuple[tuple[int, int], ...] = ()     # 짝도 후보도 없는 옛 쪽 → 가장 닮은 새 쪽
 
     def as_dict(self) -> dict:
         plan = None
@@ -79,6 +80,7 @@ class TransferInspection:
             "panel_ink_sources": list(self.panel_ink_sources),
             "moved_sources": list(self.moved_sources),
             "pair_candidates": [list(pair) for pair in self.pair_candidates],
+            "closest_targets": [list(pair) for pair in self.closest_targets],
         }
 
 

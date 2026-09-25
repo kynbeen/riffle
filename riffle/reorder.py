@@ -9,6 +9,16 @@
 새 쪽 순서는 그대로 두고, 옛 쪽이 어느 새 쪽에 얹힐지만 정한다. 닮았지만 애매하면 짝짓지 않고 **후보**로만
 돌려준다 — 화면이 두 쪽을 나란히 보여 사람이 정한다.
 
+**다시 볼 쪽.** 짝 없는 옛·새 쪽에 더해, 엔진이 **자신 없이** 지은 짝(카드에 오르던 짝)의 두 쪽도 넣는다. 순서를
+지키느라 엔진이 엉뚱한 쪽끼리 자신 없게 짝지어 정답 자리를 막는 일이 있어서다(실측: 옛 28쪽이 거리 0.544 로 새 25쪽을
+차지해 옛 24쪽↔새 25쪽 0.153, 옛 28쪽↔새 79쪽 0.015 가 둘 다 짝을 못 지음). 자신 있는 짝은 건드리지 않는다.
+밀려난 옛 쪽은 옛 쪽째 남는다(필기가 있으면 카드로 보인다).
+
+**가장 닮은 쪽.** 끝내 짝도 후보도 없는 옛 쪽에는 새 PDF 전체에서 가장 닮은 쪽을 알려 준다. 화면은 `다른 쪽`
+띠를 거기서 시작할 뿐 "같은 쪽" 이라고 말하지 않는다 — 후보 기준을 넓히면 빠진 쪽에 엉뚱한 후보를 내밀었다(25%).
+
+측정: ``tools/check_reorder.py`` (새 PDF 쪽 순서를 일부러 섞어 되찾는지 잰다). 이 판정을 바꿀 때는 그 표를 비교한다.
+
 엔진은 바꾸지 않는다. Sleek 이 ``match_pages`` 를 사람 없이 직접 부르므로(``tests/test_sleek_engine_contract.py``)
 그 결과는 그대로이고, 이 단계는 필기 옮기기의 분석에서만 덧붙는다.
 """
@@ -30,50 +40,61 @@ from .page_match import (
 @dataclass(frozen=True)
 class Reorder:
     match: MatchResult
-    moved: tuple[int, ...] = ()                         # 다시 짝지은 옛 쪽(0부터)
-    candidates: dict[int, int] = field(default_factory=dict)   # 애매한 옛 쪽 → 가장 닮은 새 쪽
+    moved: tuple[int, ...] = ()                                  # 다시 짝지은 옛 쪽(0부터)
+    candidates: dict[int, int] = field(default_factory=dict)     # 애매한 옛 쪽 → 가장 닮은 새 쪽
+    closest: dict[int, int] = field(default_factory=dict)        # 짝도 후보도 없는 옛 쪽 → 새 PDF 에서 가장 닮은 쪽
 
 
 def pair_reordered(
     match: MatchResult, source: list[PageFingerprint], target: list[PageFingerprint]
 ) -> Reorder:
-    olds = [pair.source_index for pair in match.pairs if pair.target_index is None]
-    news = [pair.target_index for pair in match.pairs if pair.source_index is None]
-    if not olds or not news:
-        return Reorder(match)
-    near = {(old, new): distance(source[old], target[new]) for old in olds for new in news}
-
-    def runner_up(old: int, new: int) -> float:
-        others = [near[old, other] for other in news if other != new]
-        others += [near[other, new] for other in olds if other != old]
-        return min(others, default=math.inf)
-
+    doubtful = [pair for pair in match.pairs if pair.matched and not pair.confident]
+    holds = {pair.source_index: pair.target_index for pair in doubtful}     # 자신 없는 짝의 지금 상대
+    olds = [pair.source_index for pair in match.pairs if pair.target_index is None] + list(holds)
+    news = [pair.target_index for pair in match.pairs if pair.source_index is None] + list(holds.values())
     chosen: dict[int, PagePair] = {}
     candidates: dict[int, int] = {}
-    for old in olds:
-        new = min(news, key=lambda other: (near[old, other], other))
-        best = near[old, new]
-        if best > _UNCERTAIN_DISTANCE:
-            continue
-        margin = runner_up(old, new) - best
-        if margin >= _UNCERTAIN_MARGIN:
-            # 두 옛 쪽이 같은 새 쪽을 고를 수는 없다 — 둘 다 뚜렷이 가까울 수는 없으므로.
-            chosen[new] = PagePair(old, new, best, None if math.isinf(margin) else margin)
-        else:
-            candidates[old] = new
-    if not chosen:
-        return Reorder(match, (), candidates)
+    if olds and news:
+        near = {(old, new): distance(source[old], target[new]) for old in olds for new in news}
 
-    moved = {pair.source_index for pair in chosen.values()}
-    pairs = []
-    for pair in match.pairs:
-        if pair.target_index is None and pair.source_index in moved:
-            continue                                    # 옛 자리에서 빼고
-        if pair.source_index is None and pair.target_index in chosen:
-            pairs.append(chosen[pair.target_index])     # 새 쪽 자리에 얹는다
-            continue
-        pairs.append(pair)
-    return Reorder(MatchResult(tuple(pairs)), tuple(sorted(moved)), candidates)
+        def runner_up(old: int, new: int) -> float:
+            others = [near[old, other] for other in news if other != new]
+            others += [near[other, new] for other in olds if other != old]
+            return min(others, default=math.inf)
+
+        for old in olds:
+            new = min(news, key=lambda other: (near[old, other], other))
+            best = near[old, new]
+            if best > _UNCERTAIN_DISTANCE:
+                continue
+            margin = runner_up(old, new) - best
+            if margin >= _UNCERTAIN_MARGIN:
+                # 두 옛 쪽이 같은 새 쪽을 고를 수는 없다 — 둘 다 뚜렷이 가까울 수는 없으므로.
+                if holds.get(old) != new:
+                    chosen[new] = PagePair(old, new, best, None if math.isinf(margin) else margin)
+            elif old not in holds:
+                candidates[old] = new
+
+    pairs = [[pair.source_index, pair.target_index, pair.distance, pair.margin] for pair in match.pairs]
+    if chosen:
+        moved = {pair.source_index for pair in chosen.values()}
+        for slot in pairs:                                  # 다시 짝지을 옛 쪽은 지금 자리에서 뗀다
+            if slot[0] in moved:
+                slot[0], slot[2], slot[3] = None, None, None
+        for new, pair in chosen.items():                    # 새 쪽 자리에 얹는다 — 새 쪽 순서는 그대로
+            at = next(index for index, slot in enumerate(pairs) if slot[1] == new)
+            displaced = pairs[at][0]
+            pairs[at] = [pair.source_index, new, pair.distance, pair.margin]
+            if displaced is not None:                       # 그 새 쪽을 자신 없이 쥐고 있던 옛 쪽은 옛 쪽째 남는다
+                pairs.insert(at + 1, [displaced, None, None, None])
+        pairs = [slot for slot in pairs if slot[0] is not None or slot[1] is not None]
+    result = MatchResult(tuple(PagePair(*slot) for slot in pairs))
+
+    closest = {}
+    for old in result.source_only:
+        if old not in candidates and target:
+            closest[old] = min(range(len(target)), key=lambda new: (distance(source[old], target[new]), new))
+    return Reorder(result, tuple(sorted(pair.source_index for pair in chosen.values())), candidates, closest)
 
 
 __all__ = ["Reorder", "pair_reordered"]

@@ -565,6 +565,7 @@ def inspect_transfer(
         match=match,
         moved_sources=reorder.moved,
         pair_candidates=tuple(sorted(reorder.candidates.items())),
+        closest_targets=tuple(sorted(reorder.closest.items())),
         source_order=tuple(source_order),
         panel_ink_sources=panel_ink,
     )

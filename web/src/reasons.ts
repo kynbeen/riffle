@@ -32,6 +32,7 @@ export interface ReviewItem {
   target_index: number | null
   reason: Reason
   candidate?: number    // 닮았지만 애매한 새 쪽 — 카드에 나란히 보인다
+  closest?: number      // 후보도 없을 때 새 PDF 에서 가장 닮은 쪽 — `다른 쪽` 띠의 시작점일 뿐
 }
 
 export interface ReviewSummary {

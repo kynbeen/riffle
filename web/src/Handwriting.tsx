@@ -114,6 +114,9 @@ function Ready({ review, initial, source, onUnsaved }: {
   // 짝 후보 — 새 PDF에 없는 옛 쪽과 닮았지만 확신이 없는 새 쪽(서버 reorder.py). 사람이 정하면 지운다.
   const [candidates, setCandidates] = useState<Record<number, number>>(() => Object.fromEntries(
     review.items.filter((item) => item.candidate !== undefined).map((item) => [item.source_index!, item.candidate!])))
+  const closest = useMemo(() => Object.fromEntries(
+    review.items.filter((item) => item.closest !== undefined).map((item) => [item.source_index!, item.closest!])) as Record<number, number>,
+  [review])
   const dropCandidate = (s: number) => setCandidates((prev) => { const next = { ...prev }; delete next[s]; return next })
   const [slots, setSlots] = useState<Slot[]>(() => initial.map(({ source_index, target_index }) => ({ source_index, target_index })))
   // 확인할 옛 쪽 → 이유. 카드 순서는 order 가 쥔다(짝을 바꾸면 밀려난 옛 쪽이 새 카드로 붙는다).
@@ -198,7 +201,8 @@ function Ready({ review, initial, source, onUnsaved }: {
             return marks[s] !== 'open' && !chosen.has(s)
               ? <CardRow key={s} source={s} target={targetOf(slots, s)} mark={marks[s]} onMark={onMark} />
               : <Card key={s} source={s} target={targetOf(slots, s)} reason={reasons[s]} mark={marks[s]}
-                  chosen={chosen.has(s)} candidate={candidates[s]} near={candidates[s] ?? nearTarget(slots, s)}
+                  chosen={chosen.has(s)} candidate={candidates[s]} near={candidates[s] ?? closest[s] ?? nearTarget(slots, s)}
+                  similar={closest[s]}
                   targetCount={targetCount} thumbnails={thumbnails.current} previews={previews.current}
                   onMark={onMark} onPick={(target) => pick(s, target)}
                   onReject={() => { dropCandidate(s); onMark('ok') }} />
@@ -248,9 +252,9 @@ function Ready({ review, initial, source, onUnsaved }: {
   )
 }
 
-function Card({ source, target, reason, mark, chosen, candidate, near, targetCount, thumbnails, previews, onMark, onPick, onReject }: {
+function Card({ source, target, reason, mark, chosen, candidate, near, similar, targetCount, thumbnails, previews, onMark, onPick, onReject }: {
   source: number; target: number | null; reason: Reason; mark: Mark; chosen: boolean
-  candidate?: number; near: number | null; targetCount: number
+  candidate?: number; near: number | null; similar?: number; targetCount: number
   thumbnails: Map<number, string>; previews: Map<string, Preview>; onMark: (mark: Mark) => void; onPick: (target: number) => void; onReject: () => void
 }) {
   // 짝이 없고 후보가 있으면 후보 새 쪽을 옆에 놓는다 — 판단은 그림으로(원칙 2).
@@ -318,7 +322,7 @@ function Card({ source, target, reason, mark, chosen, candidate, near, targetCou
         </div>
       </div>
       {picking && (
-        <TargetPicker count={targetCount} current={target} start={target ?? near} thumbnails={thumbnails}
+        <TargetPicker count={targetCount} current={target} start={target ?? near} similar={similar} thumbnails={thumbnails}
           onPick={(chosenTarget) => { setPicking(false); onPick(chosenTarget) }}
           onClose={() => setPicking(false)} />
       )}
@@ -342,8 +346,8 @@ function CardRow({ source, target, mark, onMark }: {
 }
 
 // 새 PDF 의 쪽을 가로로 펼쳐 하나를 고른다. 쪽 그림은 보일 때만 불러온다.
-function TargetPicker({ count, current, start, thumbnails, onPick, onClose }: {
-  count: number; current: number | null; start: number | null; thumbnails: Map<number, string>
+function TargetPicker({ count, current, start, similar, thumbnails, onPick, onClose }: {
+  count: number; current: number | null; start: number | null; similar?: number; thumbnails: Map<number, string>
   onPick: (target: number) => void; onClose: () => void
 }) {
   const strip = useRef<HTMLDivElement>(null)
@@ -379,7 +383,7 @@ function TargetPicker({ count, current, start, thumbnails, onPick, onClose }: {
             {thumbnails.has(index)
               ? <img src={thumbnails.get(index)} alt="" />
               : <span className="thumb-empty" />}
-            <span className="t-caption">새 {index + 1}쪽</span>
+            <span className="t-caption">새 {index + 1}쪽{index === similar ? ' · 가장 닮음' : ''}</span>
           </button>
         ))}
       </div>

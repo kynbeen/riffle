@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import unittest
 
-from riffle.page_match import MatchResult, PageFingerprint, PagePair, match_fingerprints
+from riffle.page_match import MatchResult, PageFingerprint, PagePair, distance, match_fingerprints
 from riffle.reorder import pair_reordered
 
 
@@ -37,11 +37,26 @@ class ReorderTests(unittest.TestCase):
         self.assertEqual(result.match, match)
         self.assertEqual(result.candidates, {1: 1})
 
-    def test_unlike_pages_stay_apart(self):
-        # 새 판에서 빠진 쪽(E)과 새로 생긴 쪽(C)은 닮지 않았다 — 그대로 둔다.
+    def test_unlike_pages_stay_apart_but_the_closest_page_is_named(self):
+        # 새 판에서 빠진 쪽(E)과 새로 생긴 쪽(C)은 닮지 않았다 — 그대로 둔다. `다른 쪽` 띠는 가장 닮은 쪽에서 시작한다.
         match = MatchResult((PagePair(0, 0, 0.0), PagePair(1, None), PagePair(None, 1)))
         result = pair_reordered(match, [A, E], [A, C])
         self.assertEqual((result.moved, result.candidates, result.match), ((), {}, match))
+        self.assertEqual(result.closest, {1: 1 if distance(E, C) < distance(E, A) else 0})
+
+    def test_a_doubtful_pair_blocking_the_right_one_is_undone(self):
+        # 엔진이 옛 B 를 새 E 에 자신 없이(0.54) 짝지어, 옛 B↔새 B 와 옛 E↔새 E 가 둘 다 짝을 못 지은 모양(실측 1주차(3)).
+        match = MatchResult((PagePair(0, 0, 0.0), PagePair(1, 1, 0.54, 0.0), PagePair(2, None), PagePair(None, 2)))
+        result = pair_reordered(match, [A, B, E], [A, E, B])
+        self.assertEqual(result.moved, (1, 2))
+        self.assertEqual(result.match.source_to_target(), {0: 0, 1: 2, 2: 1})
+        self.assertEqual([pair.target_index for pair in result.match.pairs], [0, 1, 2])
+        self.assertTrue(all(pair.confident for pair in result.match.pairs))
+
+    def test_a_confident_pair_is_never_touched(self):
+        match = MatchResult((PagePair(0, 0, 0.0), PagePair(1, 1, 0.1, 0.5), PagePair(2, None)))
+        result = pair_reordered(match, [A, B, B], [A, B])
+        self.assertEqual(result.match, match)
 
 
 if __name__ == "__main__":

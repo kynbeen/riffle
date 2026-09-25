@@ -53,6 +53,7 @@ def review(inspection: dict) -> dict:
     alignment = inspection.get("alignment") or {}
     doubtful = bool(alignment.get("requires_confirmation"))
     candidates = {source: target for source, target in inspection.get("pair_candidates") or []}
+    closest = {source: target for source, target in inspection.get("closest_targets") or []}
 
     items = []
     matched = new_pages = kept_old = kept_blank = 0
@@ -70,6 +71,8 @@ def review(inspection: dict) -> dict:
             item = {"slot": position, "source_index": source, "target_index": target, "reason": reason}
             if reason == "old_only" and source in candidates:
                 item["candidate"] = candidates[source]
+            elif reason == "old_only" and source in closest:
+                item["closest"] = closest[source]       # "같은 쪽" 이라고 말하지 않는다 — 고르는 띠의 시작점일 뿐
             items.append(item)
     return {
         "items": items,

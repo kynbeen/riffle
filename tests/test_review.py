@@ -11,8 +11,9 @@ def slot(source, target, *, distance=0.02, margin=0.9, confirmed=True):
             "margin": margin, "confirmed": confirmed}
 
 
-def inspection(slots, *, blank=(), panel=(), doubtful=False, moved=(), candidates=()):
+def inspection(slots, *, blank=(), panel=(), doubtful=False, moved=(), candidates=(), closest=()):
     return {
+        "closest_targets": [list(pair) for pair in closest],
         "moved_sources": list(moved),
         "pair_candidates": [list(pair) for pair in candidates],
         "plan": {"slots": slots},
@@ -51,12 +52,15 @@ class ReviewTests(unittest.TestCase):
         result = review(inspection([
             slot(0, 0), slot(2, 1), slot(1, 2),                 # 옛 1쪽이 순서가 바뀌어 새 3쪽에 짝지어짐
             slot(3, None), slot(None, 3),                       # 닮았지만 애매 — 후보로 함께 보낸다
-        ], moved={1}, candidates={(3, 3)}))
+            slot(4, None),                                      # 닮은 쪽이 없다 — 가장 닮은 쪽만 알린다
+        ], moved={1}, candidates={(3, 3)}, closest={(4, 0)}))
         self.assertEqual(result["summary"]["moved"], 1)
         self.assertEqual(result["moved_sources"], [1])
         self.assertEqual(result["summary"]["automatic"], 3)
-        self.assertEqual(result["items"], [{"slot": 3, "source_index": 3, "target_index": None,
-                                            "reason": "old_only", "candidate": 3}])
+        self.assertEqual(result["items"], [
+            {"slot": 3, "source_index": 3, "target_index": None, "reason": "old_only", "candidate": 3},
+            {"slot": 5, "source_index": 4, "target_index": None, "reason": "old_only", "closest": 0},
+        ])
 
     def test_panel_ink_wins_over_other_reasons(self):
         result = review(inspection([slot(0, 0, distance=0.9)], panel={0}))

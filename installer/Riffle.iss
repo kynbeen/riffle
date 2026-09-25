@@ -26,12 +26,16 @@ Source: "..\dist\Riffle\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdir
 
 [Icons]
 Name: "{autoprograms}\Riffle"; Filename: "{app}\Riffle.exe"
-Name: "{autoprograms}\Riffle 로컬 웹"; Filename: "{app}\RiffleLocalWeb.exe"
 Name: "{autodesktop}\Riffle"; Filename: "{app}\Riffle.exe"; Tasks: desktopicon
-Name: "{autodesktop}\Riffle 로컬 웹"; Filename: "{app}\RiffleLocalWeb.exe"; Tasks: desktopicon
+
+[InstallDelete]
+; 로컬 웹 판은 2026-09-26 걷었다 — 예전 설치가 남긴 실행 파일과 바로가기를 지운다.
+Type: files; Name: "{app}\RiffleLocalWeb.exe"
+Type: files; Name: "{autoprograms}\Riffle 로컬 웹.lnk"
+Type: files; Name: "{autodesktop}\Riffle 로컬 웹.lnk"
 
 [Tasks]
-Name: "desktopicon"; Description: "두 실행 방식의 바탕화면 바로가기 만들기"; GroupDescription: "추가 바로가기:"; Flags: checkedonce
+Name: "desktopicon"; Description: "바탕화면 바로가기 만들기"; GroupDescription: "추가 바로가기:"; Flags: checkedonce
 
 [Run]
 Filename: "{app}\Riffle.exe"; Description: "Riffle 실행"; Flags: nowait postinstall skipifsilent

@@ -15,13 +15,14 @@ $definitions = @(
         Name = "Riffle.lnk"
         Arguments = "-m riffle"
         Description = "PDF 문서 합치기와 필기 옮기기 데스크톱 앱"
-    },
-    @{
-        Name = "Riffle 로컬 웹.lnk"
-        Arguments = "-m riffle.local_web"
-        Description = "로컬 PC에서 실행되는 Riffle 웹 앱"
     }
 )
+
+# 로컬 웹 판은 2026-09-26 걷었다(데스크톱·원격 웹 두 갈래) — 예전에 만든 바로가기가 남아 있으면 지운다.
+foreach ($folder in @([Environment]::GetFolderPath("Programs"), [Environment]::GetFolderPath("Desktop"))) {
+    $old = Join-Path $folder "Riffle 로컬 웹.lnk"
+    if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old; Write-Host "옛 바로가기 삭제: $old" }
+}
 
 foreach ($definition in $definitions) {
     foreach ($folder in @(
@@ -41,4 +42,4 @@ foreach ($definition in $definitions) {
     }
 }
 
-Write-Host "설치 완료. 'Riffle' 또는 'Riffle 로컬 웹'으로 실행하세요." -ForegroundColor Green
+Write-Host "설치 완료. 'Riffle' 로 실행하세요." -ForegroundColor Green

@@ -26,22 +26,6 @@ desktop_a = Analysis(
     noarchive=False,
     optimize=1,
 )
-local_web_a = Analysis(
-    ["launch_web.pyw"],
-    pathex=[],
-    binaries=[],
-    datas=[
-        ("riffle/ui", "riffle/ui"),
-        ("assets/icon.ico", "assets"),
-    ],
-    hiddenimports=collect_submodules("pymupdf") + ["pikepdf", "riffle.web"] + version_stamp,
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=["tkinter.test"],
-    noarchive=False,
-    optimize=1,
-)
 
 desktop_pyz = PYZ(desktop_a.pure)
 desktop_exe = EXE(
@@ -57,27 +41,10 @@ desktop_exe = EXE(
     console=False,
     icon="assets/icon.ico",
 )
-local_web_pyz = PYZ(local_web_a.pure)
-local_web_exe = EXE(
-    local_web_pyz,
-    local_web_a.scripts,
-    [],
-    exclude_binaries=True,
-    name="RiffleLocalWeb",
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    console=False,
-    icon="assets/icon.ico",
-)
 coll = COLLECT(
     desktop_exe,
-    local_web_exe,
     desktop_a.binaries,
     desktop_a.datas,
-    local_web_a.binaries,
-    local_web_a.datas,
     strip=False,
     upx=True,
     name="Riffle",

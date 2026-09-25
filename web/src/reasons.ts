@@ -68,12 +68,14 @@ export function candidateWords(target: number): { title: string; detail: string 
   }
 }
 
-// 헤드라인 아래 작은 글 — 사람이 따로 할 일은 없지만 알아 두면 좋은 것.
-export function footnotes(summary: ReviewSummary): string[] {
-  const notes: string[] = []
-  if (summary.moved) notes.push(`새 판에서 순서가 바뀐 ${summary.moved}쪽은 필기를 새 자리로 옮겼습니다.`)
-  if (summary.new_pages) notes.push(`새 PDF에서 새로 생긴 ${summary.new_pages}쪽은 필기 없이 들어갑니다.`)
+// 헤드라인 아래 작은 글 — 사람이 따로 할 일은 없지만 알아 두면 좋은 것. `보기` 는 모든 쪽 보기의 그 걸러 보기로 간다.
+export interface Footnote { text: string; filter: 'moved' | 'new' | 'kept' }
+
+export function footnotes(summary: ReviewSummary): Footnote[] {
+  const notes: Footnote[] = []
+  if (summary.moved) notes.push({ text: `새 판에서 순서가 바뀐 ${summary.moved}쪽은 필기를 새 자리로 옮겼습니다.`, filter: 'moved' })
+  if (summary.new_pages) notes.push({ text: `새 PDF에서 새로 생긴 ${summary.new_pages}쪽은 필기 없이 들어갑니다.`, filter: 'new' })
   // 합집합 — 새 판에 없는 옛 쪽은 필기가 없어도 제자리에 남긴다(명세 2026-09-25-01).
-  if (summary.kept_blank) notes.push(`새 PDF에 없는 옛 쪽 ${summary.kept_blank}쪽은 필기가 없어도 제자리에 남겼습니다.`)
+  if (summary.kept_blank) notes.push({ text: `새 PDF에 없는 옛 쪽 ${summary.kept_blank}쪽은 필기가 없어도 제자리에 남겼습니다.`, filter: 'kept' })
   return notes
 }

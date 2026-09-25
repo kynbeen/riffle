@@ -3,6 +3,7 @@ import { backend, type HandwritingStatus, type PlanRow, type PlanSlot, type Prev
 import { nearTarget, reassign, targetOf, type Slot } from './plan'
 import { candidateWords, footnotes, headline, REASON_WORDS, type Reason, type Review, type ReviewSummary } from './reasons'
 import Sheet from './Sheet'
+import { countFilters, FILTER_WORDS, KIND_WORDS, kindOf, matches, type Context, type Filter, type Mark, type PageKind } from './pages'
 
 // 필기 옮기기 — 확인할 쪽만(명세 2026-09-24-01). 기계가 자신 있게 맞춘 쪽은 목록에 없고,
 // 모든 쪽은 궁금할 때만 펼쳐 본다.
@@ -15,7 +16,6 @@ const STAGE_WORDS: Record<string, string> = {
   preview: '미리보기 만드는 중',
 }
 
-type Mark = 'open' | 'ok' | 'excluded'
 
 export default function Handwriting({ source, target, onUnsaved }: {
   source: string; target: string; onUnsaved: (unsaved: boolean) => void
@@ -131,7 +131,10 @@ function Ready({ review, initial, source, onUnsaved }: {
   // 저장한 순간의 결과·숫자·쪽 대응. 요약은 이 숫자로 말한다 — 저장 뒤에 바꾼 것을 저장한 것처럼 말하지 않는다(원칙 5).
   const [saved, setSaved] = useState<{ result: Saved; counts: Counts; key: string } | null>(null)
   const [error, setError] = useState('')
-  const [showAll, setShowAll] = useState(false)
+  // 두 보기 — 봐야 할 쪽(카드)과 모든 쪽(격자). 봐야 할 쪽이 없으면 모든 쪽에서 시작한다(명세 2026-09-25-01).
+  const [view, setView] = useState<'review' | 'all'>(() => review.items.length > 0 ? 'review' : 'all')
+  const [filter, setFilter] = useState<Filter>('all')
+  const show = (next: Filter) => { setView('all'); setFilter(next) }
   const thumbnails = useRef(new Map<number, string>())
   // 카드 미리보기. 접었다 펼칠 때마다 다시 부르지 않는다(처음으로 갈 때 늦게 도착하는 요청도 줄어든다).
   const previews = useRef(new Map<string, Preview>())
@@ -191,9 +194,19 @@ function Ready({ review, initial, source, onUnsaved }: {
   return (
     <>
       <div className="t-title headline">{headline(counts, open)}</div>
-      {footnotes(counts).map((note) => <div className="t-caption" key={note}>{note}</div>)}
+      {footnotes(counts).map((note) => (
+        <div className="t-caption footnote" key={note.text}>
+          {note.text} <button className="link" onClick={() => show(note.filter)}>보기</button>
+        </div>
+      ))}
 
-      {order.length > 0 && (
+      <div className="segmented" role="tablist" aria-label="보기">
+        <button role="tab" aria-selected={view === 'review'} onClick={() => setView('review')}>봐야 할 쪽 {open}</button>
+        <button role="tab" aria-selected={view === 'all'} onClick={() => setView('all')}>모든 쪽 {counts.result_pages}</button>
+      </div>
+
+      {view === 'review' && order.length === 0 && <div className="note t-body">봐야 할 쪽이 없습니다.</div>}
+      {view === 'review' && order.length > 0 && (
         <div className="cards">
           {order.map((s) => {
             const onMark = (mark: Mark) => setMarks((prev) => ({ ...prev, [s]: mark }))
@@ -210,10 +223,10 @@ function Ready({ review, initial, source, onUnsaved }: {
         </div>
       )}
 
-      <details className="all" open={showAll} onToggle={(event) => setShowAll((event.target as HTMLDetailsElement).open)}>
-        <summary className="t-body">모든 쪽 보기 ({slots.length})</summary>
-        {showAll && <AllPages slots={slots} reasons={reasons} marks={marks} blank={blank} chosen={chosen} moved={moved} />}
-      </details>
+      {view === 'all' && (
+        <AllPages slots={slots} context={{ reasons, marks, chosen, blank, moved }} filter={filter} onFilter={setFilter}
+          previews={previews.current} />
+      )}
 
       {error && <div className="message error t-body">{error}</div>}
       {/* 저장 막대는 화면 아래에 붙어 늘 보인다 — 카드가 많아도 스크롤 끝까지 찾으러 가지 않는다. */}
@@ -409,30 +422,71 @@ function Page({ label, background, ink, failed }: { label: string; background?: 
   )
 }
 
-function AllPages({ slots, reasons, marks, blank, chosen, moved }: {
-  slots: Slot[]; reasons: Record<number, Reason>; marks: Record<number, Mark>; blank: Set<number>; chosen: Set<number>
-  moved: Set<number>
+// 모든 쪽 — 결과 순서대로 필기를 얹은 쪽 그림. 표시는 사람이 알아 둘 것에만 붙는다(자동으로 맞춘 쪽은 표시 없음).
+// 사람이 뺀 쪽은 원래 자리에 접힌 줄로 둔다 — 따로 모으면 어디서 빠졌는지 모른다.
+function AllPages({ slots, context, filter, onFilter, previews }: {
+  slots: Slot[]; context: Context; filter: Filter; onFilter: (filter: Filter) => void; previews: Map<string, Preview>
 }) {
+  const kinds = slots.map((slot) => kindOf(slot, context))
+  const counts = countFilters(kinds)
+  const filters = (Object.keys(FILTER_WORDS) as Filter[]).filter((key) => key === 'all' || counts[key] > 0)
+  const shown = slots.map((slot, index) => ({ slot, kind: kinds[index] })).filter(({ kind }) => matches(kind, filter))
   return (
-    <ol className="all-list">
-      {slots.map((slot) => {
-        const s = slot.source_index
-        const watched = s !== null && s in reasons
-        const mark = watched ? marks[s!] : undefined
-        let state = '자동'
-        if (watched) state = mark === 'excluded' ? '뺌' : chosen.has(s!) ? '직접 고름' : mark === 'ok' ? '확인함' : '볼 쪽'
-        else if (s === null) state = '새로 생긴 쪽'
-        else if (moved.has(s) && slot.target_index !== null) state = '자동 · 순서 바뀜'
-        else if (slot.target_index === null) state = blank.has(s) ? '옛 쪽째 남김 · 필기 없음' : '옛 쪽째 남김'
-        const pair = s !== null && slot.target_index !== null
-          ? `옛 ${s + 1}쪽 → 새 ${slot.target_index + 1}쪽`
-          : s === null ? `새 ${slot.target_index! + 1}쪽` : `옛 ${s + 1}쪽`
-        return (
-          <li key={`${s}-${slot.target_index}`} className={watched && mark === 'open' ? 'attention' : ''}>
-            <span className="t-body">{pair}</span><span className="t-caption">{state}</span>
-          </li>
-        )
-      })}
-    </ol>
+    <>
+      <div className="filters" role="group" aria-label="걸러 보기">
+        {filters.map((key) => (
+          <button key={key} className="chip-button" aria-pressed={filter === key} onClick={() => onFilter(key)}>
+            {FILTER_WORDS[key]} {counts[key]}
+          </button>
+        ))}
+      </div>
+      <div className="page-grid">
+        {shown.map(({ slot, kind }) => kind === 'excluded'
+          ? <div className="excluded-row t-caption" key={`${slot.source_index}-x`}>옛 {slot.source_index! + 1}쪽 · 뺐습니다</div>
+          : <PageTile key={`${slot.source_index}-${slot.target_index}`} slot={slot} kind={kind} previews={previews} />)}
+      </div>
+    </>
+  )
+}
+
+// 격자의 한 쪽. 보일 때만 그림을 부른다 — 97쪽을 한 번에 만들지 않는다.
+function PageTile({ slot, kind, previews }: { slot: Slot; kind: PageKind; previews: Map<string, Preview> }) {
+  const s = slot.source_index, t = slot.target_index
+  const key = `${t ?? -1}:${s ?? -1}`
+  const [view, setView] = useState<Preview | null>(() => previews.get(key) ?? null)
+  const [failed, setFailed] = useState(false)
+  const box = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (view || !box.current) return
+    const stop = new AbortController()
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return
+      observer.disconnect()
+      backend.preview(t ?? -1, s ?? -1, stop.signal)
+        .then((result) => { previews.set(key, result); setView(result) })
+        .catch(() => { if (!stop.signal.aborted) setFailed(true) })
+    }, { rootMargin: '400px 0px' })
+    observer.observe(box.current)
+    return () => { observer.disconnect(); stop.abort() }
+  }, [key, view, previews, s, t])
+  const background = t === null ? view?.before : view?.after
+  const label = t === null ? `옛 ${s! + 1}쪽` : s === null || kind === 'auto' ? `새 ${t + 1}쪽` : `새 ${t + 1}쪽 · 옛 ${s + 1}쪽 필기`
+  return (
+    <figure className={`page-tile ${kind}`} ref={box}>
+      <div className="sheet-of-paper">
+        {background ? (
+          <>
+            <img src={background} alt={label} />
+            {s !== null && view?.ink && <img className="ink" src={view.ink} alt="" aria-hidden />}
+          </>
+        ) : (
+          <div className="placeholder t-caption">{failed ? '미리보기를 만들지 못했습니다' : ''}</div>
+        )}
+      </div>
+      <figcaption>
+        <span className="t-caption">{label}</span>
+        {KIND_WORDS[kind] && <span className={`badge ${kind}`}>{KIND_WORDS[kind]}</span>}
+      </figcaption>
+    </figure>
   )
 }

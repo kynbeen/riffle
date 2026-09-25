@@ -6,16 +6,19 @@
 
 웹 서버를 빈 포트에 띄우고 Edge 를 창 크기 둘(1440×1000 라이트, 390×844 다크)로 연다. 확인하는 것:
 
+- 카드가 있으면 봐야 할 쪽에서 시작하고, 모든 쪽 격자의 쪽 수·걸러 보기 숫자가 탭 숫자와 같다(첫 쪽 그림까지 걸린 시간도 찍는다)
 - 누른 카드는 한 줄로 접힌다
 - 저장 막대가 스크롤과 상관없이 화면 안에 보인다
 - 저장 뒤 카드를 바꾸면 요약 숫자는 저장한 그대로이고, 저장 막대가 돌아온다
 - 이 화면에 파일을 놓아도 브라우저가 받아 가지 않는다(작업이 남는다)
 - 정한 것이 있고 저장 전이면 ← 가 한 번 묻는다. 저장한 뒤에는 묻지 않는다
 
-카드가 둘 이상 나오는 파일 쌍이어야 한다(예: 병리학 1주차(3) 옛 필기 → Sleek 필기본).
+카드가 둘 이상 나오는 파일 쌍이어야 한다(예: 병리학 2주차(1) 박민웅 옛 필기 → 2주차(1) Sleek 필기본 — 카드 4장.
+1주차(3) 은 2026-09-25 부터 순서 바뀐 쪽을 자동으로 짝지어 카드가 없다).
 """
 from __future__ import annotations
 
+import re
 import socket
 import subprocess
 import sys
@@ -54,6 +57,23 @@ def run(page: Page, url: str, source: Path, target: Path) -> None:
     page.wait_for_selector(".headline", timeout=300_000)
     cards = page.locator(".card")
     check(cards.count() >= 2, f"카드가 둘 이상 나온다 ({cards.count()}장)")
+
+    check(page.get_by_role("tab", name=re.compile("^봐야 할 쪽")).get_attribute("aria-selected") == "true",
+          "카드가 있으면 봐야 할 쪽에서 시작한다")
+
+    # 모든 쪽 — 결과 순서 격자. 쪽 수가 탭의 숫자와 같고, 걸러 보기의 '전체' 와 같다.
+    all_tab = page.get_by_role("tab", name=re.compile("^모든 쪽"))
+    total = int(all_tab.inner_text().split()[-1])
+    started = time.perf_counter()
+    all_tab.click()
+    page.wait_for_selector(".page-tile img", timeout=60_000)
+    print(f"       첫 쪽 그림까지 {time.perf_counter() - started:.2f}초")
+    check(page.locator(".page-tile").count() == total, f"격자 쪽 수가 모든 쪽 숫자와 같다 ({total})")
+    check(page.locator(".chip-button").first.inner_text() == f"전체 {total}", "걸러 보기 '전체' 가 모든 쪽 숫자와 같다")
+    watch = page.locator(".chip-button", has_text="볼 쪽")
+    watch.click()
+    check(page.locator(".page-tile").count() == int(watch.inner_text().split()[-1]), "볼 쪽만 거르면 그 숫자만큼 남는다")
+    page.get_by_role("tab", name=re.compile("^봐야 할 쪽")).click()
 
     page.evaluate("document.querySelector('.stage').scrollTop = 0")
     check(footer_in_view(page), "맨 위에서도 저장 막대가 보인다")

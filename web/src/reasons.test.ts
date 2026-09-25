@@ -15,14 +15,14 @@ test('확인할 쪽이 없으면 모두 맞췄다고만 말한다', () => {
 
 test('새 쪽과 필기 없이 남긴 옛 쪽은 할 일 없이 알리기만 한다', () => {
   assert.deepEqual(footnotes(summary), [
-    '새 PDF에서 새로 생긴 1쪽은 필기 없이 들어갑니다.',
-    '새 PDF에 없는 옛 쪽 3쪽은 필기가 없어도 제자리에 남겼습니다.',
+    { text: '새 PDF에서 새로 생긴 1쪽은 필기 없이 들어갑니다.', filter: 'new' },
+    { text: '새 PDF에 없는 옛 쪽 3쪽은 필기가 없어도 제자리에 남겼습니다.', filter: 'kept' },
   ])
 })
 
 test('순서가 바뀐 쪽은 옮겼다고 알리기만 한다', () => {
   assert.deepEqual(footnotes({ ...summary, new_pages: 0, kept_blank: 0, moved: 2 }),
-    ['새 판에서 순서가 바뀐 2쪽은 필기를 새 자리로 옮겼습니다.'])
+    [{ text: '새 판에서 순서가 바뀐 2쪽은 필기를 새 자리로 옮겼습니다.', filter: 'moved' }])
 })
 
 test('짝 후보 카드는 몇 번째 새 쪽인지 사람 쪽 번호로 말한다', () => {

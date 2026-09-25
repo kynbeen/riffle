@@ -237,7 +237,6 @@ def rebuild_handwriting(
             page_root = PurePosixPath(order_name).parent
             slots: list[_PdfSlot] = []
             additions: dict[str, ArchiveAddition] = {}
-            deletions: set[str] = set()
 
             for pair in match.pairs:
                 output_index = len(slots)
@@ -276,10 +275,9 @@ def rebuild_handwriting(
                         )
                     )
                 elif pair.source_index is not None:
+                    # 새 PDF 에 없는 옛 쪽은 필기가 없어도 제자리에 남긴다 — 합집합(명세 2026-09-25-01 변경 이력).
+                    # 족첵 첫 장의 기출 색인처럼 새 판에 없는 내용이 조용히 사라지지 않게.
                     source_page = source_pages[pair.source_index]
-                    if is_blank_page(source_page.blob):
-                        deletions.add(source_page.name)
-                        continue
                     blob = patch_page(source_page.blob, pdf_page_index=output_index)
                     slots.append(
                         _PdfSlot(
@@ -422,7 +420,6 @@ def rebuild_handwriting(
             temporary,
             replacements,
             additions=additions,
-            deletions=deletions,
             trailer_patch=trailer_patch,
         )
         if _read_trailer(temporary) != trailer:
@@ -431,7 +428,7 @@ def rebuild_handwriting(
                  "Samsung 꼬리표의 노트 높이가 재조립한 높이와 다릅니다.")
         with ZipFile(temporary) as check:
             checked_members = _safe_members(check)
-            expected_names = (set(members) - deletions) | set(additions)
+            expected_names = set(members) | set(additions)
             _require(set(checked_members) == expected_names, "재조립한 SDOCX의 엔트리 구성이 계획과 다릅니다.")
             _require(hashlib.sha256(check.read(embedded_name)).hexdigest() == pdf_hash, "재조립한 PDF 해시가 다릅니다.")
             checked_media = next(
@@ -467,7 +464,6 @@ def rebuild_handwriting(
         "preserved_source_only_count": sum(
             1 for slot in slots if slot.target_index is None
         ),
-        "dropped_blank_count": len(deletions),
         "footer_size": len(trailer),
         "alignment": alignment.as_dict() if alignment else None,
         "timestamp_us": now_us,

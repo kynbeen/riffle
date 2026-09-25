@@ -110,7 +110,8 @@ class RebuildHandwritingTests(unittest.TestCase):
         with ZipFile(output) as archive:
             result = read_page_order(archive.read("pageIdInfo.dat"))
             names = [entry.uuid for entry in result.entries]
-            self.assertEqual(names[:3], [UUIDS[0], UUIDS[4], UUIDS[2]])
+            # 필기 없는 옛 쪽(UUIDS[1])도 남는다 — 합집합(명세 2026-09-25-01)
+            self.assertEqual(names[:4], [UUIDS[0], UUIDS[1], UUIDS[4], UUIDS[2]])
             self.assertEqual(archive.read(f"{UUIDS[4]}.page"), self.payloads[f"{UUIDS[4]}.page"])
 
     def test_trailing_native_page_stays_last_when_the_target_gains_a_final_page(self):
@@ -138,7 +139,8 @@ class RebuildHandwritingTests(unittest.TestCase):
             self.assertEqual(read_end_tag(archive.read("end_tag.bin")).note_height, height)
         self.assertEqual(read_end_tag(read_footer(output)).note_height, height)
 
-    def test_rebuild_keeps_annotated_source_page_and_all_target_pages(self):
+    def test_rebuild_keeps_every_source_only_page_and_all_target_pages(self):
+        """새 PDF 에 없는 옛 쪽은 필기가 없어도(DROP) 제자리에 남는다 — 합집합(명세 2026-09-25-01)."""
         match = MatchResult(
             pairs=(
                 PagePair(0, 0, 0.0, 1.0),
@@ -159,21 +161,20 @@ class RebuildHandwritingTests(unittest.TestCase):
             now_us=11,
         )
 
-        self.assertEqual(result["page_count"], 4)
-        self.assertEqual(result["note_page_count"], 5)
-        self.assertEqual(result["preserved_source_only_count"], 1)
-        self.assertEqual(result["dropped_blank_count"], 1)
-        height = 1039 * 4 + 2613 + 41 * 4
+        self.assertEqual(result["page_count"], 5)
+        self.assertEqual(result["note_page_count"], 6)
+        self.assertEqual(result["preserved_source_only_count"], 2)
+        height = 1039 * 5 + 2613 + 41 * 5
         self.assertEqual(read_footer(output), patch_end_tag(SPEN_FOOTER, note_height=height, now_us=11))
 
         with ZipFile(output) as archive:
             names = archive.namelist()
-            self.assertNotIn(f"{UUIDS[1]}.page", names)
+            self.assertIn(f"{UUIDS[1]}.page", names)
             self.assertIn(f"{NEW_UUID}.page", names)
             order = read_page_order(archive.read("pageIdInfo.dat"))
             self.assertEqual(
                 [entry.uuid for entry in order.entries],
-                [UUIDS[0], UUIDS[2], NEW_UUID, UUIDS[3], UUIDS[4]],
+                [UUIDS[0], UUIDS[1], UUIDS[2], NEW_UUID, UUIDS[3], UUIDS[4]],
             )
             for entry in order.entries:
                 blob = archive.read(f"{entry.uuid}.page")
@@ -182,14 +183,15 @@ class RebuildHandwritingTests(unittest.TestCase):
             kept = read_page(archive.read(f"{UUIDS[2]}.page"))
             added = read_page(archive.read(f"{NEW_UUID}.page"))
             supplemental = archive.read(f"{UUIDS[4]}.page")
-            self.assertEqual(kept.pdf.page_index, 1)
-            self.assertEqual(added.pdf.page_index, 2)
+            self.assertEqual(read_page(archive.read(f"{UUIDS[1]}.page")).pdf.page_index, 1)
+            self.assertEqual(kept.pdf.page_index, 2)
+            self.assertEqual(added.pdf.page_index, 3)
             self.assertEqual(added.page_hash, b"N" * 32)
             self.assertTrue(is_blank_page(archive.read(f"{NEW_UUID}.page")))
             self.assertEqual(supplemental, self.payloads[f"{UUIDS[4]}.page"])
             self.assertEqual(
                 read_note(archive.read("note.note")).height,
-                1039 * 4 + 2613 + 41 * 4,
+                1039 * 5 + 2613 + 41 * 5,
             )
 
             embedded = archive.read("media/0@source.pdf")
@@ -197,9 +199,9 @@ class RebuildHandwritingTests(unittest.TestCase):
             self.assertEqual(media.file_hash, hashlib.sha256(embedded).hexdigest())
 
         with pymupdf.open(stream=embedded, filetype="pdf") as document:
-            self.assertEqual(document.page_count, 4)
+            self.assertEqual(document.page_count, 5)
             labels = [document[index].get_text().strip() for index in range(document.page_count)]
-            self.assertEqual(labels, ["A", "KEEP", "NEW", "C"])
+            self.assertEqual(labels, ["A", "DROP", "KEEP", "NEW", "C"])
 
     def test_rebuild_rejects_a_missing_page_that_the_user_did_not_exclude(self):
         """빠진 쪽과 빼기로 한 쪽은 다르다 — 선언하지 않은 누락은 여전히 거절한다."""
@@ -265,25 +267,25 @@ class RebuildHandwritingTests(unittest.TestCase):
             hash_factory=lambda size: b"N" * size,
         )
 
-        self.assertEqual(result["page_count"], 4)
-        self.assertEqual(result["preserved_source_only_count"], 1)
-        self.assertEqual(result["dropped_blank_count"], 1)
+        self.assertEqual(result["page_count"], 5)
+        self.assertEqual(result["preserved_source_only_count"], 2)
         with ZipFile(output) as archive:
             order = read_page_order(archive.read("pageIdInfo.dat"))
             # 원본 끝에 있던 빈 노트 쪽(UUIDS[4])은 쪽 순서가 바뀌어도 끝에 남는다.
             self.assertEqual(
                 [entry.uuid for entry in order.entries],
-                [UUIDS[3], UUIDS[0], UUIDS[2], NEW_UUID, UUIDS[4]],
+                [UUIDS[3], UUIDS[0], UUIDS[1], UUIDS[2], NEW_UUID, UUIDS[4]],
             )
             self.assertEqual(read_page(archive.read(f"{UUIDS[3]}.page")).pdf.page_index, 0)
             self.assertEqual(read_page(archive.read(f"{UUIDS[0]}.page")).pdf.page_index, 1)
-            self.assertEqual(read_page(archive.read(f"{UUIDS[2]}.page")).pdf.page_index, 2)
-            self.assertEqual(read_page(archive.read(f"{NEW_UUID}.page")).pdf.page_index, 3)
+            self.assertEqual(read_page(archive.read(f"{UUIDS[1]}.page")).pdf.page_index, 2)
+            self.assertEqual(read_page(archive.read(f"{UUIDS[2]}.page")).pdf.page_index, 3)
+            self.assertEqual(read_page(archive.read(f"{NEW_UUID}.page")).pdf.page_index, 4)
             embedded = archive.read("media/0@source.pdf")
 
         with pymupdf.open(stream=embedded, filetype="pdf") as document:
             labels = [document[index].get_text().strip() for index in range(document.page_count)]
-            self.assertEqual(labels, ["C", "A", "KEEP", "NEW"])
+            self.assertEqual(labels, ["C", "A", "DROP", "KEEP", "NEW"])
 
     def test_different_aspect_ratio_uses_target_page_and_moves_editable_ink(self):
         source_pdf = self.root / "wide-source.pdf"

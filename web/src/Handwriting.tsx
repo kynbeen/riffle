@@ -88,7 +88,7 @@ export default function Handwriting({ source, target, onUnsaved }: {
 // 지금 대응으로 센 요약. 짝을 바꾸면 숫자도 바뀐다.
 function tally(slots: Slot[], reasons: Record<number, Reason>, marks: Record<number, Mark>,
                blank: Set<number>, base: ReviewSummary): ReviewSummary & { checked: number; dropped: number } {
-  let automatic = 0, keptOld = 0, omitted = 0, newPages = 0, dropped = 0, checked = 0, resultPages = 0
+  let automatic = 0, keptOld = 0, keptBlank = 0, newPages = 0, dropped = 0, checked = 0, resultPages = 0
   for (const slot of slots) {
     const s = slot.source_index
     const watched = s !== null && s in reasons
@@ -97,12 +97,11 @@ function tally(slots: Slot[], reasons: Record<number, Reason>, marks: Record<num
     if (mark === 'ok') checked += 1
     if (s !== null && slot.target_index !== null) { if (!watched) automatic += 1 }
     else if (s === null) newPages += 1
-    else if (blank.has(s)) { omitted += 1; continue }
-    else keptOld += 1
+    else { keptOld += 1; if (blank.has(s)) keptBlank += 1 }
     resultPages += 1
   }
   return { ...base, automatic, attention: Object.keys(reasons).length, new_pages: newPages, kept_old: keptOld,
-           omitted, result_pages: resultPages, checked, dropped }
+           kept_blank: keptBlank, result_pages: resultPages, checked, dropped }
 }
 
 type Counts = ReturnType<typeof tally>
@@ -136,8 +135,8 @@ function Ready({ review, initial, source, onUnsaved }: {
     setSlots(next)
     setMarks((prev) => ({ ...prev, [s]: 'ok' }))
     setChosen((prev) => new Set(prev).add(s))
+    // 밀려난 옛 쪽은 옛 쪽째 남는다(합집합). 필기가 있으면 사람이 보게 한다 — 조용히 다른 새 쪽으로 옮기지 않는다.
     if (displaced !== null && !blank.has(displaced)) {
-      // 밀려난 옛 쪽에 필기가 있으면 옛 쪽째 남기고 사람이 보게 한다 — 조용히 다른 새 쪽으로 옮기지 않는다.
       setReasons((prev) => ({ ...prev, [displaced]: 'old_only' }))
       setMarks((prev) => ({ ...prev, [displaced]: 'open' }))
       setOrder((prev) => prev.includes(displaced) ? prev : [...prev.slice(0, prev.indexOf(s) + 1), displaced, ...prev.slice(prev.indexOf(s) + 1)])
@@ -145,13 +144,13 @@ function Ready({ review, initial, source, onUnsaved }: {
     }
   }
 
-  // 저장할 쪽 대응. 확인할 쪽이 아닌 것은 기계가 맞춘 대로 두고, 필기 없는 옛 쪽은 뺀다.
+  // 저장할 쪽 대응. 확인할 쪽이 아닌 것은 기계가 맞춘 대로 둔다. 새 PDF 에 없는 옛 쪽은 필기가 없어도 남긴다(합집합).
   const plan = (): PlanRow[] => slots.map((slot) => {
     const s = slot.source_index
     if (s !== null && s in reasons) {
       return { ...slot, confirmed: marks[s] === 'ok', excluded: marks[s] === 'excluded' }
     }
-    return { ...slot, confirmed: true, excluded: s !== null && slot.target_index === null && blank.has(s) }
+    return { ...slot, confirmed: true, excluded: false }
   })
 
   const key = JSON.stringify(plan())
@@ -209,7 +208,7 @@ function Ready({ review, initial, source, onUnsaved }: {
           <div className="saved">
             <div className="t-body"><b>저장했습니다</b>{saved.result.name ? ` · ${saved.result.name}` : ''}</div>
             <div className="t-caption">
-              {`자동 ${saved.counts.automatic} · 확인 ${saved.counts.checked} · 옛 쪽째 남김 ${saved.counts.kept_old} · 뺀 쪽 ${saved.counts.omitted + saved.counts.dropped}`}
+              {`자동 ${saved.counts.automatic} · 확인 ${saved.counts.checked} · 옛 쪽째 남김 ${saved.counts.kept_old} · 뺀 쪽 ${saved.counts.dropped}`}
             </div>
             {/* 필기 옮기기 결과의 경고는 "확인 안 한 쪽을 승인하고 저장함" 하나뿐이고, 위 요약 줄이 이미 말한다. */}
             {saved.result.path && backend.openFolder && (
@@ -393,7 +392,7 @@ function AllPages({ slots, reasons, marks, blank, chosen }: {
         let state = '자동'
         if (watched) state = mark === 'excluded' ? '뺌' : chosen.has(s!) ? '직접 고름' : mark === 'ok' ? '확인함' : '볼 쪽'
         else if (s === null) state = '새로 생긴 쪽'
-        else if (slot.target_index === null) state = blank.has(s) ? '필기가 없어 뺌' : '옛 쪽째 남김'
+        else if (slot.target_index === null) state = blank.has(s) ? '옛 쪽째 남김 · 필기 없음' : '옛 쪽째 남김'
         const pair = s !== null && slot.target_index !== null
           ? `옛 ${s + 1}쪽 → 새 ${slot.target_index + 1}쪽`
           : s === null ? `새 ${slot.target_index! + 1}쪽` : `옛 ${s + 1}쪽`

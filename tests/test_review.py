@@ -34,14 +34,15 @@ class ReviewTests(unittest.TestCase):
             slot(2, 3, margin=0.01, confirmed=False),           # 똑같은 쪽이 또 있다
             slot(3, None),                                      # 새 PDF 에 없는 옛 쪽 + 필기
             slot(None, 2),                                      # 새로 생긴 쪽 — 부르지 않는다
-            slot(4, None),                                      # 필기 없는 옛 쪽 — 뺀다
+            slot(4, None),                                      # 필기 없는 옛 쪽 — 묻지 않고 남긴다
         ], blank={4}))
         self.assertEqual([(item["slot"], item["reason"]) for item in result["items"]],
                          [(1, "different"), (2, "duplicate"), (3, "old_only")])
         summary = result["summary"]
         self.assertEqual((summary["matched"], summary["automatic"], summary["new_pages"],
-                          summary["kept_old"], summary["omitted"]), (3, 1, 1, 1, 1))
-        self.assertEqual(summary["result_pages"], 5)
+                          summary["kept_old"], summary["kept_blank"]), (3, 1, 1, 2, 1))
+        # 합집합 — 새 PDF 에 없는 옛 쪽은 필기가 없어도 결과에 남는다(명세 2026-09-25-01)
+        self.assertEqual(summary["result_pages"], 6)
         self.assertEqual(result["blank_sources"], [4])
 
     def test_panel_ink_wins_over_other_reasons(self):

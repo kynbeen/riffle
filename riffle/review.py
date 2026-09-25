@@ -12,7 +12,7 @@
 - ``alignment``  — 쪽 안 내용의 자리가 많이 달라져 필기 위치를 확인해야 한다(문서 전체 판정).
 
 사람을 부르지 않는 것: 새로 생긴 쪽(필기가 없으니 잃을 것이 없다 — 요약에서 숫자로만 알린다),
-필기 없는 옛 쪽(묻지 않고 뺀다 — 원칙 4), 자신 있게 맞춘 쪽.
+새 PDF 에 없는 필기 없는 옛 쪽(묻지 않고 제자리에 남긴다 — 합집합, 명세 2026-09-25-01), 자신 있게 맞춘 쪽.
 """
 from __future__ import annotations
 
@@ -53,24 +53,23 @@ def review(inspection: dict) -> dict:
     doubtful = bool(alignment.get("requires_confirmation"))
 
     items = []
-    matched = new_pages = omitted = kept_old = 0
+    matched = new_pages = kept_old = kept_blank = 0
     for position, slot in enumerate(slots):
         source, target = slot.get("source_index"), slot.get("target_index")
         if source is not None and target is not None:
             matched += 1
         elif source is None:
             new_pages += 1
-        elif source in blank:
-            omitted += 1
         else:
             kept_old += 1
+            kept_blank += source in blank
         reason = _reason(slot, panel, blank, doubtful)
         if reason:
             items.append({"slot": position, "source_index": source, "target_index": target,
                           "reason": reason})
     return {
         "items": items,
-        # 필기 없는 옛 쪽. 화면에서 짝을 바꿔 밀려난 옛 쪽을 남길지(필기 있음) 뺄지(없음) 여기로 안다.
+        # 필기 없는 옛 쪽. 화면에서 짝을 바꿔 밀려난 옛 쪽을 사람에게 보일지(필기 있음) 조용히 남길지(없음) 여기로 안다.
         "blank_sources": sorted(blank),
         "summary": {
             "matched": matched,                     # 옛 쪽과 새 쪽을 짝지은 수
@@ -78,8 +77,8 @@ def review(inspection: dict) -> dict:
                                        and item["source_index"] is not None),
             "attention": len(items),
             "new_pages": new_pages,                 # 새 PDF 에만 있는 쪽 — 필기 없이 들어간다
-            "kept_old": kept_old,                   # 새 PDF 에 없어 옛 쪽째 남기는 쪽
-            "omitted": omitted,                     # 필기가 없어 뺀 옛 쪽
+            "kept_old": kept_old,                   # 새 PDF 에 없어 옛 쪽째 남기는 쪽(필기 없는 쪽 포함)
+            "kept_blank": kept_blank,               # 그중 필기가 없는 쪽 — 사람을 부르지 않고 알리기만 한다
             "result_pages": matched + new_pages + kept_old,
         },
     }

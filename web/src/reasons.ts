@@ -38,8 +38,8 @@ export interface ReviewSummary {
   automatic: number
   attention: number
   new_pages: number
-  kept_old: number
-  omitted: number
+  kept_old: number      // 새 PDF 에 없어 옛 쪽째 남기는 쪽(필기 없는 쪽 포함)
+  kept_blank: number    // 그중 필기가 없는 쪽
   result_pages: number
 }
 
@@ -60,6 +60,7 @@ export function headline(summary: ReviewSummary, open: number): string {
 export function footnotes(summary: ReviewSummary): string[] {
   const notes: string[] = []
   if (summary.new_pages) notes.push(`새 PDF에서 새로 생긴 ${summary.new_pages}쪽은 필기 없이 들어갑니다.`)
-  if (summary.omitted) notes.push(`필기가 없는 옛 쪽 ${summary.omitted}쪽은 뺐습니다.`)
+  // 합집합 — 새 판에 없는 옛 쪽은 필기가 없어도 제자리에 남긴다(명세 2026-09-25-01).
+  if (summary.kept_blank) notes.push(`새 PDF에 없는 옛 쪽 ${summary.kept_blank}쪽은 필기가 없어도 제자리에 남겼습니다.`)
   return notes
 }

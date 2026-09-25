@@ -1,7 +1,7 @@
 """Sleek 이 사람 없이 부르는 Riffle 엔진의 입구 — 이것이 사라지면 Sleek 이 조용히 멈춘다.
 
 Sleek 은 Riffle 의 화면이 아니라 **엔진 함수를 직접** 쓴다. Riffle 체크아웃의 venv 파이썬으로
-Sleek 의 드라이버(`sleek/pipeline/noteditor_merge_driver.py`·`noteditor_analysis_driver.py`)를 돌리고,
+Sleek 의 드라이버(`sleek/pipeline/riffle_merge_driver.py`·`riffle_analysis_driver.py`)를 돌리고,
 드라이버가 아래 이름들을 import 한다. 합친 결과의 **바이트가 Riffle 과 같아야** 해시 비교가 성립해서,
 Sleek 이 같은 일을 따로 구현하지 않는다.
 

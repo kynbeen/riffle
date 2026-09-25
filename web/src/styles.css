@@ -14,6 +14,8 @@
   --accent-text: #ffffff;
   --accent-soft: rgba(0, 96, 199, 0.08);
   --danger: #b8212a;
+  --warn: #b25e00;
+  --warn-soft: rgba(178, 94, 0, 0.10);
   --shadow: 0 12px 40px rgba(0, 0, 0, 0.10), 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
@@ -31,6 +33,8 @@
     --accent-text: #0b1a2c;
     --accent-soft: rgba(90, 167, 255, 0.12);
     --danger: #ff877f;
+    --warn: #ffb45c;
+    --warn-soft: rgba(255, 180, 92, 0.14);
     --shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 }
@@ -63,6 +67,18 @@ button, input { font: inherit; color: inherit; }
   border: 0; background: transparent; border-radius: 8px; padding: 4px 8px; cursor: pointer; color: var(--text-2);
 }
 .back:hover { background: var(--bg-hover); color: var(--text); }
+
+/* 제목 표시줄 없는 데스크톱 창 — 맨 위 막대가 그 자리다(명세 2026-09-25-03). 빈 곳을 끌면 창이 움직인다.
+   창 단추는 Windows 사용자가 찾는 자리(오른쪽 끝)와 크기(46×40)를 따른다 — 플랫폼 관례(Apple HIG). */
+.topbar.framed { height: 40px; padding-right: 0; user-select: none; -webkit-user-select: none; }
+.window-buttons { margin-left: auto; display: flex; align-self: stretch; }
+.window-buttons button {
+  width: 46px; border: 0; background: transparent; color: var(--text); cursor: default;
+  display: grid; place-items: center;
+}
+.window-buttons svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1; }
+.window-buttons button:hover { background: var(--bg-hover); }
+.window-buttons button.close:hover { background: #c42b1c; color: #ffffff; }
 
 .stage { flex: 1; display: grid; place-items: center; padding: 24px 16px 48px; overflow: auto; }
 
@@ -231,6 +247,45 @@ button, input { font: inherit; color: inherit; }
 .card-row .t-caption { flex: 1; }
 .saved { display: grid; gap: 8px; padding: 16px; border-radius: 16px; background: var(--bg-raised); }
 
+/* 봐야 할 쪽이 없을 때 — 조용한 완료. 믿고 맡기되 들어갈 문(연결 보기)은 한 줄로 */
+.calm { display: grid; gap: 4px; padding: 16px 20px; border-radius: 16px; background: var(--bg-raised); }
+
+/* 연결 보기 — 왼쪽 옛 필기 파일, 오른쪽 새 PDF, 가운데 선(명세 2026-09-25-03). 두 띠가 함께 흐른다. */
+/* 쪽 그림은 작게(한 줄 높이를 낮춰 한 화면에 여러 짝이 보이게), 두 띠는 가운데 선 쪽으로 붙인다 — 선이 짧고 곧다. */
+.links { position: relative; display: grid; gap: 10px; padding-bottom: 8px; --tile: 272px; }
+.links-head, .band { display: grid; grid-template-columns: minmax(0, 1fr) 88px minmax(0, 1fr); }
+.links-head { position: sticky; top: -24px; z-index: 1; padding: 8px 0; background: var(--bg); }
+.links-head > :first-child { text-align: right; }
+.links-lines { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.line { fill: none; stroke: var(--line-strong); stroke-width: 1.5; }
+.line.watch { stroke: var(--warn); stroke-width: 2; }
+.line.chosen, .line.checked { stroke: var(--accent); stroke-width: 2; }
+.line.moved { stroke: var(--accent); stroke-width: 2.5; }
+.line.excluded { display: none; }
+.band { align-items: start; transition: opacity 0.2s; }
+.band.dim { opacity: 0.22; }
+.band-old { display: grid; gap: 6px; justify-items: end; }
+.band-new { display: grid; justify-items: start; }
+.link-tile {
+  margin: 0; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer;
+  display: grid; gap: 2px; width: min(100%, var(--tile));
+}
+.band-old .link-tile .page-caption { justify-content: flex-end; }
+.link-tile .sheet-of-paper { display: block; transition: box-shadow 0.2s; }
+.link-tile:hover .sheet-of-paper { box-shadow: 0 0 0 2px var(--accent); }
+.link-tile .placeholder { min-height: 72px; }
+.link-tile.excluded .sheet-of-paper { opacity: 0.4; }
+.badge.merged, .badge.relocated { background: var(--accent-soft); color: var(--accent); }
+.badge.moved { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.badge.excluded { background: transparent; border: 1px dashed var(--line-strong); }
+.badge.watch { background: var(--warn-soft); color: var(--warn); }
+
+/* 크게 보기에서 여러 옛 쪽이 한 새 쪽에 모일 때 — 옛 쪽들을 세로로, 새 쪽을 옆에 */
+.viewer-olds { display: grid; gap: 12px; }
+.viewer-pages.many { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
+.viewer-old { display: grid; gap: 4px; }
+.viewer-old.off .sheet-of-paper { opacity: 0.4; }
+
 .sheet-backdrop { position: fixed; inset: 0; z-index: 10; background: rgba(0, 0, 0, 0.18); display: grid; place-items: center; padding: 16px; }
 .sheet {
   width: min(420px, 100%); display: grid; gap: 12px; padding: 24px; border-radius: 16px;
@@ -240,6 +295,9 @@ button, input { font: inherit; color: inherit; }
 
 @media (max-width: 720px) {
   .card { grid-template-columns: 1fr; }
+  .links-head, .band { grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr); }
+  .links { --tile: 100%; }
+  .viewer-pages.many { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

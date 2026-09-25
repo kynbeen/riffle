@@ -23,7 +23,7 @@ test('쪽마다 무엇인지 하나로 가른다', () => {
 
 test('걸러 보기 숫자는 결과 쪽 수와 맞는다 — 뺀 쪽은 전체에 들지 않는다', () => {
   const counts = countFilters(slots.map((slot) => kindOf(slot, context)))
-  assert.deepEqual(counts, { all: 8, watch: 1, new: 1, kept: 2, moved: 1, chosen: 1, excluded: 1 })
+  assert.deepEqual(counts, { all: 8, watch: 1, new: 1, kept: 2, moved: 1, merged: 0, relocated: 0, chosen: 1, excluded: 1 })
 })
 
 test('옛 쪽째 남김은 필기 없는 쪽도 함께 거른다', () => {

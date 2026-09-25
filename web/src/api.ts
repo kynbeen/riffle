@@ -21,6 +21,7 @@ export interface PlanSlot {
   source_index: number | null
   target_index: number | null
   confirmed: boolean
+  merged?: number[]      // 이 새 쪽에 함께 얹는 옛 쪽(명세 2026-09-25-03)
 }
 
 export interface HandwritingStatus {
@@ -28,7 +29,10 @@ export interface HandwritingStatus {
   source_name: string | null
   target_name: string | null
   analysis: Analysis
-  inspection: { plan: { slots: PlanSlot[] } | null } | null
+  inspection: {
+    plan: { slots: PlanSlot[]; excluded_sources?: number[]; source_count?: number; target_count?: number } | null
+    relocated_targets?: number[]
+  } | null
   review: Review | null
 }
 
@@ -42,6 +46,7 @@ export interface Preview {
 export interface PlanRow {
   source_index: number | null
   target_index: number | null
+  merged?: number[]
   confirmed: boolean
   excluded: boolean
 }
@@ -70,11 +75,14 @@ export interface Backend {
   saveMerge(order: Ref[], name: string): Promise<Saved>
   handwritingStatus(): Promise<HandwritingStatus>
   retryHandwriting(): Promise<void>
-  // 새 쪽(targetIndex)에 옛 쪽(sourceIndex)의 손필기를 얹어 본다. 한쪽이 없으면 -1.
-  preview(targetIndex: number, sourceIndex: number, signal?: AbortSignal): Promise<Preview>
+  // 새 쪽(targetIndex)에 옛 쪽(sources)의 손필기를 얹어 본다. 새 쪽이 없으면 -1(옛 쪽 하나를 그대로), 옛 쪽이
+  // 없으면 -1. 여러 옛 쪽을 한 새 쪽에 모아 볼 때는 목록(대표가 맨 앞).
+  preview(targetIndex: number, sources: number | number[], signal?: AbortSignal): Promise<Preview>
   saveHandwriting(name: string, plan: PlanRow[], allowUnconfirmed: boolean): Promise<Saved>
   openFolder?(path: string): Promise<void>
   reset(): Promise<void>
+  // 데스크톱 창은 제목 표시줄이 없다 — 창 단추를 화면이 그린다(명세 2026-09-25-03).
+  window?: { minimize(): Promise<void>; toggleMaximize(): Promise<void>; close(): Promise<void> }
 }
 
 interface Reply { ok: boolean; error?: string; [key: string]: unknown }
@@ -136,8 +144,10 @@ function desktop(): Backend {
     },
     async handwritingStatus() { return (await call('handwriting_status')) as unknown as HandwritingStatus },
     async retryHandwriting() { await call('retry_handwriting_analysis') },
-    async preview(targetIndex, sourceIndex) {
-      return (await call('handwriting_preview', targetIndex, sourceIndex, '')) as unknown as Preview
+    async preview(targetIndex, sources) {
+      const list = Array.isArray(sources) ? sources : null
+      return (await call('handwriting_preview', targetIndex, list ? (list[0] ?? -1) : sources, '',
+                          list ? list.join(',') : '')) as unknown as Preview
     },
     async saveHandwriting(name, plan, allowUnconfirmed) {
       const reply = await call('save_handwriting_transfer', name, plan, allowUnconfirmed)
@@ -146,6 +156,11 @@ function desktop(): Backend {
       return { saved: true, path: result.path, name: result.path.split(/[\\/]/).pop(), warnings: result.warnings }
     },
     async openFolder(path) { await call('open_folder', path) },
+    window: {
+      async minimize() { await call('window_minimize') },
+      async toggleMaximize() { await call('window_toggle_maximize') },
+      async close() { await call('window_close') },
+    },
     async reset() {
       await call('reset_handwriting_transfer')
       await call('reset_documents')
@@ -249,8 +264,11 @@ function web(): Backend {
     },
     async handwritingStatus() { return (await json('/api/handwriting/status')) as unknown as HandwritingStatus },
     async retryHandwriting() { await json('/api/handwriting/retry', { method: 'POST' }) },
-    async preview(targetIndex, sourceIndex, signal) {
-      const query = new URLSearchParams({ page_index: String(targetIndex), source_index: String(sourceIndex) })
+    async preview(targetIndex, sources, signal) {
+      const list = Array.isArray(sources) ? sources : null
+      const query = new URLSearchParams({ page_index: String(targetIndex),
+                                          source_index: String(list ? (list[0] ?? -1) : sources) })
+      if (list) query.set('sources', list.join(','))
       return (await json(`/api/handwriting/preview?${query}`, { signal })) as unknown as Preview
     },
     async saveHandwriting(name, plan, allowUnconfirmed) {

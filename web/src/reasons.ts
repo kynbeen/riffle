@@ -1,11 +1,15 @@
 // 확인할 쪽의 이유 — 서버(riffle/review.py)는 종류만 보내고, 사람이 읽는 말은 여기 한 곳에 둔다(원칙 8).
 
-export type Reason = 'panel_ink' | 'old_only' | 'different' | 'duplicate' | 'alignment'
+export type Reason = 'panel_ink' | 'crowded' | 'old_only' | 'different' | 'duplicate' | 'alignment'
 
 export const REASON_WORDS: Record<Reason, { title: string; detail: string }> = {
   panel_ink: {
     title: '손필기가 필기 칸 위에 있습니다',
     detail: '필기본을 다시 만들며 칸의 글이 바뀌었을 수 있습니다. 손필기가 엉뚱한 글 위에 얹히지 않았는지 봐 주세요.',
+  },
+  crowded: {
+    title: '필기 칸에 빈자리가 모자랐습니다',
+    detail: '칸에 쓴 손필기를 새 칸의 빈자리로 옮겼지만 자리가 모자라 글과 조금 겹칩니다. 알아볼 수 있는지 봐 주세요.',
   },
   old_only: {
     title: '새 PDF에 없는 쪽입니다',
@@ -44,6 +48,11 @@ export interface ReviewSummary {
   kept_blank: number    // 그중 필기가 없는 쪽
   result_pages: number
   moved: number         // 새 판에서 순서가 바뀌어 다시 짝지은 옛 쪽
+  // 새 파일이 Sleek 필기본일 때(명세 2026-09-25-03) — 알리기만 하는 것
+  merged?: number       // 새 쪽에 함께 얹은 옛 쪽
+  dropped?: number      // 새 필기본에 없어 뺀 빈 옛 쪽
+  resized?: number      // 반복 수가 바뀐 강의록 쪽
+  relocated?: number    // 칸 손필기를 빈자리로 옮긴 새 쪽
 }
 
 export interface Review {
@@ -51,10 +60,13 @@ export interface Review {
   blank_sources: number[]
   moved_sources: number[]
   summary: ReviewSummary
+  notes_mode?: '' | 'notes' | 'into_notes'
 }
 
 // 머리 한 줄이 결론이다(명세 「필기 옮기기」).
-export function headline(summary: ReviewSummary, open: number): string {
+export function headline(summary: ReviewSummary, open: number, notes = false): string {
+  // 필기본끼리는 새 필기본이 정답이다 — 결과가 곧 새 필기본의 쪽 수다.
+  if (summary.attention === 0 && notes) return `새 필기본 ${summary.result_pages}쪽에 손필기를 모두 옮겼습니다.`
   if (summary.attention === 0) return `${summary.result_pages}쪽을 모두 자동으로 맞췄습니다.`
   if (open === 0) return `${summary.automatic}쪽은 자동으로 맞췄고, ${summary.attention}쪽은 봐 주셨습니다.`
   return `${summary.automatic}쪽은 자동으로 맞췄습니다. ${open}쪽만 봐 주세요.`
@@ -69,10 +81,16 @@ export function candidateWords(target: number): { title: string; detail: string 
 }
 
 // 헤드라인 아래 작은 글 — 사람이 따로 할 일은 없지만 알아 두면 좋은 것. `보기` 는 모든 쪽 보기의 그 걸러 보기로 간다.
-export interface Footnote { text: string; filter: 'moved' | 'new' | 'kept' }
+export interface Footnote { text: string; filter: 'moved' | 'new' | 'kept' | 'merged' | 'relocated' | 'excluded' | null }
 
 export function footnotes(summary: ReviewSummary): Footnote[] {
   const notes: Footnote[] = []
+  if (summary.resized) {
+    notes.push({ text: `필기본이 바뀌어 반복 수가 달라진 ${summary.resized}쪽은 손필기를 새 쪽에 나눠 얹었습니다.`,
+                 filter: summary.merged ? 'merged' : null })
+  }
+  if (summary.relocated) notes.push({ text: `필기 칸에 쓴 손필기가 있는 ${summary.relocated}쪽은 새 칸의 빈자리로 옮겼습니다.`, filter: 'relocated' })
+  if (summary.dropped) notes.push({ text: `새 필기본에 없는 옛 쪽 ${summary.dropped}쪽은 손필기가 없어 뺐습니다.`, filter: 'excluded' })
   if (summary.moved) notes.push({ text: `새 판에서 순서가 바뀐 ${summary.moved}쪽은 필기를 새 자리로 옮겼습니다.`, filter: 'moved' })
   if (summary.new_pages) notes.push({ text: `새 PDF에서 새로 생긴 ${summary.new_pages}쪽은 필기 없이 들어갑니다.`, filter: 'new' })
   // 합집합 — 새 판에 없는 옛 쪽은 필기가 없어도 제자리에 남긴다(명세 2026-09-25-01).

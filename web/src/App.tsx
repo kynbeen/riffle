@@ -28,11 +28,28 @@ export default function App() {
     try { await backend.reset() } catch { /* 비우기에 실패해도 첫 화면으로는 돌아간다 */ }
   }, [])
   const back = () => (unsaved ? setAsking(true) : void leave())
+  // 데스크톱 창은 제목 표시줄 없이 화면을 채운다(명세 2026-09-25-03). 이 막대가 제목 표시줄 노릇을 한다 — 빈 곳을
+  // 끌면 창이 움직이고(pywebview-drag-region), 두 번 누르면 최대화·복원, 오른쪽 끝에 Windows 창 단추 셋.
+  const frame = backend.window
   return (
     <div className="app">
-      <header className="topbar">
+      <header className={`topbar${frame ? ' pywebview-drag-region framed' : ''}`}
+        onDoubleClick={frame ? (event) => { if (event.target === event.currentTarget) void frame.toggleMaximize() } : undefined}>
         {screen.kind !== 'drop' && <button className="back" onClick={back} aria-label="처음으로" title="처음으로">←</button>}
         <span className="wordmark" title={version ? `Riffle ${version}` : undefined}>Riffle</span>
+        {frame && (
+          <div className="window-buttons">
+            <button aria-label="최소화" title="최소화" onClick={() => void frame.minimize()}>
+              <svg viewBox="0 0 10 10" aria-hidden><path d="M0 5h10" /></svg>
+            </button>
+            <button aria-label="최대화 또는 복원" title="최대화 또는 복원" onClick={() => void frame.toggleMaximize()}>
+              <svg viewBox="0 0 10 10" aria-hidden><rect x="0.5" y="0.5" width="9" height="9" rx="1" /></svg>
+            </button>
+            <button className="close" aria-label="닫기" title="닫기" onClick={() => void frame.close()}>
+              <svg viewBox="0 0 10 10" aria-hidden><path d="M0 0l10 10M10 0L0 10" /></svg>
+            </button>
+          </div>
+        )}
       </header>
       <main className="stage">
         {screen.kind === 'drop' && <DropScreen onStart={setScreen} />}

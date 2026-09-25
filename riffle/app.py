@@ -92,6 +92,7 @@ class ComposerApi:
         # WinForms/WebView2 object graph and eventually recurses forever.
         self._session = session or ComposerSession()
         self._window: Any | None = None
+        self._maximized = True          # 창은 최대화로 열린다 — 창 단추·두 번 누르기가 이것을 뒤집는다
         self._closed = False
         self._handwriting_source: Path | None = None
         self._handwriting_target: Path | None = None
@@ -122,6 +123,26 @@ class ComposerApi:
 
     def health(self) -> dict:
         return self._ok(version=__version__)
+
+    # 제목 표시줄 없는 창(명세 2026-09-25-03) — 화면 맨 위 막대의 창 단추가 부른다.
+    def window_minimize(self) -> dict:
+        if self._window is not None:
+            self._window.minimize()
+        return self._ok()
+
+    def window_toggle_maximize(self) -> dict:
+        if self._window is not None:
+            if self._maximized:
+                self._window.restore()
+            else:
+                self._window.maximize()
+            self._maximized = not self._maximized
+        return self._ok(maximized=self._maximized)
+
+    def window_close(self) -> dict:
+        if self._window is not None:
+            self._window.destroy()
+        return self._ok()
 
     def log_client_error(self, message: str) -> dict:
         logging.getLogger("riffle").error("UI error: %s", message)
@@ -642,6 +663,47 @@ def _bind_file_drop(window: Any) -> None:
     window.dom.document.events.drop += DOMEventHandler(on_drop, prevent_default=True, stop_propagation=True)
 
 
+def _fit_to_work_area(window: Any) -> None:
+    """제목 표시줄 없는 창의 최대화를 **작업 영역**(작업 표시줄을 뺀 곳)으로 못박는다.
+
+    WinForms 는 테두리 없는 창을 최대화하면 모니터 전체를 덮어 작업 표시줄을 가린다. 파일을 끌어올 탐색기로 오갈 수
+    있어야 하므로(명세 2026-09-25-03 「진짜 전체 화면」은 안 함) 최대화 범위를 창이 있는 모니터의 작업 영역으로 둔다.
+    값은 그 모니터 기준 좌표여야 한다(주 모니터가 아닌 곳에서 WinForms 가 이렇게 해석한다).
+    """
+    form = getattr(window, "native", None)
+    if form is None:
+        return
+    try:
+        from System import Action
+        from System.Drawing import Rectangle
+        from System.Windows.Forms import FormWindowState, Screen
+
+        def apply() -> None:
+            screen = Screen.FromControl(form)
+            area, bounds = screen.WorkingArea, screen.Bounds
+            form.MaximizedBounds = Rectangle(area.X - bounds.X, area.Y - bounds.Y, area.Width, area.Height)
+            if form.WindowState == FormWindowState.Maximized:
+                form.WindowState = FormWindowState.Normal
+                form.WindowState = FormWindowState.Maximized
+
+        form.Invoke(Action(apply))
+    except Exception:
+        logging.getLogger("riffle").exception("Failed to fit the frameless window to the work area")
+
+
+def _window_background() -> str:
+    """화면이 그려지기 전 창 바탕색 — 화면의 바탕 토큰(web/src/styles.css --bg)과 같게, Windows 앱 테마를 따라."""
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as key:
+            light = winreg.QueryValueEx(key, "AppsUseLightTheme")[0]
+        return "#ffffff" if light else "#1c1c1e"
+    except Exception:
+        return "#ffffff"
+
+
 def run(debug: bool = False) -> None:
     configure_windows_app_identity()
     import webview
@@ -649,6 +711,9 @@ def run(debug: bool = False) -> None:
     api = ComposerApi()
     # 화면은 web/ 에서 빌드한 riffle/ui 다(명세 2026-09-24-01). 웹과 같은 빌드를 파일로 연다.
     static_file = UI_ENTRY
+    # 제목 표시줄 없이 화면을 채운다(사용자 요청 2026-09-25, 명세 2026-09-25-03). 화면 맨 위 막대가 제목 표시줄
+    # 노릇을 한다 — 끄는 자리(pywebview-drag-region)와 창 단추 셋. 아무 데나 끌어 창이 움직이면 쪽 그림을 누르다
+    # 창이 딸려 오므로 easy_drag 는 끈다.
     window = webview.create_window(
         "Riffle",
         str(static_file.resolve()) + "#desktop",
@@ -657,11 +722,16 @@ def run(debug: bool = False) -> None:
         height=900,
         min_size=(1080, 680),
         maximized=True,
-        background_color="#0b1020",
+        frameless=True,
+        easy_drag=False,
+        background_color=_window_background(),
         text_select=True,
     )
     api._bind_window(window)
     window.events.closed += api._close
+    window.events.maximized += lambda: setattr(api, "_maximized", True)
+    window.events.restored += lambda: setattr(api, "_maximized", False)
+    window.events.shown += lambda: _fit_to_work_area(window)
     window.events.loaded += lambda: _bind_file_drop(window)
     icon = Path(__file__).parents[1] / "assets" / "icon.ico"
     webview.start(

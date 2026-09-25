@@ -149,7 +149,9 @@ class ComposerApiTests(unittest.TestCase):
 
     def test_desktop_window_starts_maximized(self):
         closed, loaded = FakeEvent(), FakeEvent()
-        window = SimpleNamespace(events=SimpleNamespace(closed=closed, loaded=loaded))
+        maximized, restored, shown = FakeEvent(), FakeEvent(), FakeEvent()
+        window = SimpleNamespace(events=SimpleNamespace(closed=closed, loaded=loaded, shown=shown,
+                                                        maximized=maximized, restored=restored))
         webview = SimpleNamespace(
             create_window=Mock(return_value=window),
             start=Mock(),
@@ -159,6 +161,13 @@ class ComposerApiTests(unittest.TestCase):
             run()
 
         self.assertTrue(webview.create_window.call_args.kwargs["maximized"])
+        # 제목 표시줄 없이 화면을 채운다 — 화면 맨 위 막대가 끄는 자리와 창 단추를 갖는다(명세 2026-09-25-03).
+        self.assertTrue(webview.create_window.call_args.kwargs["frameless"])
+        self.assertFalse(webview.create_window.call_args.kwargs["easy_drag"])
+        self.assertIsNotNone(maximized.callback)
+        self.assertIsNotNone(restored.callback)
+        self.assertIsNotNone(shown.callback)          # 최대화 범위를 작업 영역으로(작업 표시줄을 가리지 않는다)
+        shown.callback()                               # 창 객체가 없으면 조용히 넘어간다
         self.assertEqual(webview.create_window.call_args.kwargs["min_size"], (1080, 680))
         entry = webview.create_window.call_args.args[1]
         self.assertTrue(entry.endswith("index.html#desktop"))

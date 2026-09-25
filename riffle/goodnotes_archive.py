@@ -163,10 +163,13 @@ def _order_key(payload: bytes) -> str:
 
 def read_document(archive: ZipFile, members: dict[str, ZipInfo]) -> GoodnotesDocument:
     """아카이브에서 쪽 목록과 다시 쓸 때 본뜰 레코드를 읽는다."""
+    # Goodnotes 5 파일도 같은 구조로 보이지만 실제 파일로는 아직 확인하지 못했다(명세 2026-09-25-03 단위 7).
+    # 구조가 다르면 여기서 멈추고 사람 말로 알린다 — 추측으로 읽어 필기를 잘못 옮기지 않는다(원칙 5·7).
     for required in (_MEMBER_EVENTS, _MEMBER_SCHEMA):
         if required not in members:
             raise GoodnotesTransferError(
-                f"{required} 이 없는 Goodnotes 파일은 지원하지 않습니다."
+                "이 Goodnotes 파일의 쪽 목록을 찾지 못해 옮기지 않았습니다. Goodnotes 5처럼 예전 판에서 만든 "
+                "파일일 수 있습니다. 원본 파일은 그대로입니다."
             )
     schema_version = _schema_version(archive.read(_MEMBER_SCHEMA))
     attachments = dict(_index_pairs(archive.read(_MEMBER_ATTACHMENTS))) if _MEMBER_ATTACHMENTS in members else {}

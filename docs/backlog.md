@@ -129,7 +129,7 @@ v1.2.0 으로 고정해 계속 돌리고, Riffle 은 1.0 부터 새 서비스로
 - [x] 코드·문서·설치 프로그램 이름 변경(새 AppId — 설치된 NotEditor 1.2.0 을 덮지 않는다), GitHub 저장소
   `kynbeen/riffle`, 폴더 `C:\dev\riffle`, 이 PC 의 바로가기·PATH.
 - [x] 옛 서비스 고정용 가지 `noteditor-1.2`(= 태그 `v1.2.0`)를 GitHub 에 올렸다.
-- [ ] **사용자:** Render 대시보드에서 옛 서비스 `noteditor` 의 배포 가지를 `noteditor-1.2` 로 바꾼다(로그인 필요).
+- [x] **사용자:** Render 대시보드에서 옛 서비스 `noteditor` 의 배포 가지를 `noteditor-1.2` 로 바꾼다(로그인 필요). — 2026-09-26 사용자 완료, 그날 `main` 푸시.
   **이것이 끝나기 전에는 main 을 올리지 않는다** — 옛 서비스가 main 을 따라 자동 배포하면 Riffle 코드가 올라간다.
 - [ ] Riffle 태그 체계. 옛 태그 `v1.0.0`~`v1.2.0` 이 있어 `v1.0.0` 을 다시 못 쓴다 — `riffle-v1.0.0` 처럼 붙이고,
   버전 계산(`riffle/version.py` 의 `git describe --match`)과 `release.yml` 태그 조건을 함께 바꾼다.

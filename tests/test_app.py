@@ -191,7 +191,8 @@ class ComposerApiTests(unittest.TestCase):
         script = window.evaluate_js.call_args.args[0]
         self.assertIn("__riffleDropped", script)
         self.assertIn("옛 필기.sdocx", script)
-        self.assertIn(str(target).replace("\\", "\\\\"), script)
+        # 앱은 경로를 resolve 한다 — CI 의 RUNNER~1 같은 짧은 이름이 긴 이름으로 풀린다.
+        self.assertIn(str(target.resolve()).replace("\\", "\\\\"), script)
 
     def test_native_objects_are_not_exposed_as_public_api_attributes(self):
         self.assertFalse(hasattr(self.api, "window"))

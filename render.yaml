@@ -2,6 +2,9 @@ services:
   - type: web
     name: riffle
     runtime: docker
+    # 릴리스 태그를 올리면 release.yml 이 이 가지를 옮긴다 — main 의 개발 중 커밋은 배포되지 않는다.
+    branch: release
+    autoDeployTrigger: commit
     plan: free
     region: singapore
     healthCheckPath: /api/health

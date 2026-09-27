@@ -7,8 +7,8 @@
 빌드된 앱 안에는 깃 저장소가 없으므로, 출처를 순서대로 훑는다:
 
 1. ``RIFFLE_VERSION`` 환경변수 — 어디서든 강제로 지정할 때
-2. ``riffle/_version.py`` — 배포 빌드 때 태그에서 새겨 넣는 파일 (버전 관리 대상 아님)
-3. ``git describe`` — 개발 중 체크아웃. 태그 이후 커밋 수까지 붙어 나온다
+2. ``git describe`` — 개발 중 체크아웃. 태그 이후 커밋 수까지 붙어 나온다
+3. ``riffle/_version.py`` — 배포 빌드 때 태그에서 새겨 넣는 파일 (버전 관리 대상 아님)
 4. 배포 플랫폼이 알려주는 커밋 해시
 5. 아무것도 없으면 ``0.0.0+unknown`` — 모르면 모른다고 말한다
 
@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 UNKNOWN_VERSION = "0.0.0+unknown"
@@ -66,7 +67,8 @@ def describe(root: Path | None = None) -> str | None:
     root = root or Path(__file__).resolve().parent.parent
     try:
         completed = subprocess.run(
-            ["git", "describe", "--tags", "--always", "--dirty"],
+            # NotEditor 시절 태그(noteditor-v*)는 버전 계산에서 뺀다.
+            ["git", "describe", "--tags", "--match", "v[0-9]*", "--always", "--dirty"],
             cwd=root,
             capture_output=True,
             text=True,
@@ -93,12 +95,15 @@ def resolve_version() -> str:
     override = os.environ.get("RIFFLE_VERSION", "").strip()
     if override:
         return override
+    # 패키징한 뒤 체크아웃에 빌드 때 새긴 파일이 남을 수 있다. 그때는 체크아웃의
+    # 커밋이 지금 도는 코드를 더 정확히 가리킨다.
+    if not getattr(sys, "frozen", False):
+        described = describe()
+        if described:
+            return version_from_describe(described)
     stamped = _stamped_version()
     if stamped:
         return stamped
-    described = describe()
-    if described:
-        return version_from_describe(described)
     # Render 같은 배포 플랫폼은 깃 없이 커밋 해시만 환경변수로 알려준다.
     commit = os.environ.get("RENDER_GIT_COMMIT", "").strip()
     if commit:

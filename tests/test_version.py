@@ -46,9 +46,17 @@ class ResolveVersionTests(unittest.TestCase):
         with patch.dict("os.environ", {"RIFFLE_VERSION": "9.9.9"}):
             self.assertEqual(version.resolve_version(), "9.9.9")
 
-    def test_stamped_file_is_used_before_git(self):
+    def test_source_checkout_uses_git_before_a_stale_build_stamp(self):
         with patch.dict("os.environ", {"RIFFLE_VERSION": ""}), \
                 patch.object(version, "_stamped_version", return_value="0.5.0"), \
+                patch.object(version.sys, "frozen", False, create=True), \
+                patch.object(version, "describe", return_value="v0.4.0-2-gabc1234"):
+            self.assertEqual(version.resolve_version(), "0.4.0+2.gabc1234")
+
+    def test_frozen_build_uses_its_stamped_version(self):
+        with patch.dict("os.environ", {"RIFFLE_VERSION": ""}), \
+                patch.object(version, "_stamped_version", return_value="0.5.0"), \
+                patch.object(version.sys, "frozen", True, create=True), \
                 patch.object(version, "describe", return_value="v0.4.0") as described:
             self.assertEqual(version.resolve_version(), "0.5.0")
         described.assert_not_called()
@@ -68,6 +76,15 @@ class ResolveVersionTests(unittest.TestCase):
                 patch.object(version, "_stamped_version", return_value=None), \
                 patch.object(version, "describe", return_value=None):
             self.assertEqual(version.resolve_version(), "0.0.0+bf90fcf")
+
+    def test_describe_ignores_tags_from_the_noteditor_era(self):
+        """옛 제품 태그(noteditor-v1.2.0)가 Riffle 버전으로 새지 않게 v 태그만 본다."""
+        with patch.object(version.subprocess, "run") as run:
+            run.return_value.returncode = 0
+            run.return_value.stdout = "v1.0.0\n"
+            self.assertEqual(version.describe(), "v1.0.0")
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index("--match") + 1], "v[0-9]*")
 
     def test_the_running_package_reports_a_usable_version(self):
         import riffle

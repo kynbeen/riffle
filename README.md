@@ -2,8 +2,12 @@
 
 Riffle은 PDF 문서 합치기와 Samsung Notes·Notewise·Goodnotes 6 필기 옮기기를 한 화면에서
 제공하는 도구입니다.
-Windows 데스크톱 앱과 Docker 기반 웹앱이 같은 PDF·필기 문서 처리 엔진을 사용합니다.
+Windows 데스크톱 앱과 Docker 기반 웹앱이 같은 PDF·필기 문서 처리 엔진과 같은 화면을 사용합니다.
+이 PC 에서는 데스크톱 앱을, 다른 기기에서는 웹(**<https://riffle-9rnx.onrender.com>**)을 씁니다.
 Android 앱은 2026-09-24 사용자 결정으로 걷었습니다(명세 `2026-09-24-01`).
+
+Riffle 은 NotEditor 의 새 이름입니다(2026-09-24). Riffle 1.0.0 은 별개 앱으로 설치되어, 이미 설치한
+NotEditor 1.2.0 을 덮지 않습니다.
 
 > **처음 쓰시나요?** 설치부터 첫 사용까지 그대로 따라 할 수 있게 정리했습니다 →
 > **[설치와 첫 사용 안내](docs/설치와-첫-사용.md)**
@@ -103,9 +107,6 @@ riffle
 `riffle.cmd`는 **저장소 루트에 그대로 두세요.** 이 파일은 자기가 있는 폴더를 Riffle
 루트로 보고 `venv`·`dist`를 찾습니다. 다른 폴더로 복사하지 말고, PATH에는 이 폴더를 넣습니다.
 
-Sleek 인계(`--open-plan` 합치기·원본 비교)는 2026-09-24 사용자 결정으로 걷었습니다(명세
-[2026-09-24-01](docs/specs/2026-09-24-01-새-화면.md)). Sleek 의 새 화면이 더는 부르지 않습니다.
-
 이 파일은 ASCII·CRLF로만 저장합니다. `cmd.exe`는 LF만 있는 배치 파일의 `rem` 줄을 명령으로
 실행하려 들고, OEM 코드페이지에서 한글 주석을 깨뜨립니다(실제로 겪은 함정입니다).
 `.gitattributes`가 체크아웃 때 CRLF를 보장합니다.
@@ -126,6 +127,11 @@ Sleek 인계(`--open-plan` 합치기·원본 비교)는 2026-09-24 사용자 결
 여러 경우를 창 하나씩 띄워 보는 확인 도구는 `tools/open_cases.py` 입니다.
 
 로컬 웹 판(`Riffle 로컬 웹`)은 2026-09-26 걷었습니다. 이 PC 에서는 데스크톱 앱을, 다른 기기에서는 원격 웹을 씁니다.
+
+Sleek 인계 화면(`--open-plan` 합치기·원본 비교)은 2026-09-24 걷었습니다(명세
+[2026-09-24-01](docs/specs/2026-09-24-01-새-화면.md)). Sleek 이 사람 없이 Riffle 엔진(`riffle.engine`·`riffle.page_match`·
+`riffle.ranges`·`riffle.pdf`)을 직접 부르는 길은 남아 있고 `tests/test_sleek_engine_contract.py` 가 그 입구를 지킵니다.
+엔진을 옮기거나 지우기 전에 Sleek 의 `riffle_*_driver.py` 를 먼저 보세요.
 
 ## 웹앱 실행
 
@@ -189,10 +195,21 @@ docker compose up --build
 업체 종속 설정은 없습니다. 저장소 루트의 `Dockerfile`을 빌드할 수 있는 Render, Fly.io,
 Cloud Run, Railway 또는 일반 컨테이너 서버에 배포할 수 있습니다.
 
-저장소의 `render.yaml`은 서울과 가까운 싱가포르 리전의 Render 웹 서비스를 정의합니다.
-무료 인스턴스의 메모리 한계를 고려해 파일 하나당 업로드 한도는 100MB, 비활성 세션 만료는
-1시간으로 설정합니다. 업로드와 변환은 모두 Render 컨테이너 안에서 실행되며 사용자 PC에서
-별도 서버를 실행할 필요가 없습니다.
+저장소의 `render.yaml`은 서울과 가까운 싱가포르 리전의 Render 웹 서비스 `riffle`
+(<https://riffle-9rnx.onrender.com>)을 정의합니다. 무료 인스턴스의 메모리 한계를 고려해 파일 하나당
+업로드 한도는 100MB, 비활성 세션 만료는 1시간으로 설정합니다. 업로드와 변환은 모두 Render 컨테이너
+안에서 실행되며 사용자 PC에서 별도 서버를 실행할 필요가 없습니다.
+
+**웹은 릴리스 때만 배포됩니다.** 서비스는 `main` 이 아니라 `release` 가지를 따라가고, 그 가지는
+`v*` 릴리스 태그를 올렸을 때 `release.yml` 이 옮깁니다(아래 「릴리스 파일 만들기」). 그래서 `main` 에
+개발 중 커밋을 올려도 웹은 바뀌지 않습니다. 이미지 안에는 깃이 없어, 그 가지에 버전을 새긴
+`riffle/_version.py` 를 한 커밋 더 얹어 싣습니다.
+
+옛 NotEditor 웹(`noteditor` 서비스, <https://not-editor.onrender.com>)은 `noteditor-1.2` 가지(= NotEditor 1.2.0)에
+고정돼 계속 돕니다. Render 무료 인스턴스 시간(월 750시간)은 작업공간 단위로 두 서비스가 나눠 씁니다.
+
+Render 설정은 대시보드 대신 Render CLI(`render`, [render-oss/cli](https://github.com/render-oss/cli))로도 봅니다 —
+`render login` 한 번 뒤 `render services`, `render deploys list <서비스 id>`, `render logs`.
 
 ```bash
 docker build -t riffle .
@@ -216,13 +233,31 @@ docker run --rm -p 8000:8000 riffle
 
 ### Windows
 
-`v0.5.0` 같은 태그를 푸시하면 `.github/workflows/release.yml`이 다음 작업을 자동 수행합니다.
+`v1.0.0` 같은 태그를 푸시하면 `.github/workflows/release.yml`이 다음 작업을 자동 수행합니다.
 
 1. 전체 테스트 실행
 2. 태그에서 버전을 확정해 앱과 설치 파일에 함께 새김
 3. PyInstaller로 독립 실행 폴더 생성
 4. Inno Setup으로 `Riffle-Setup-<버전>.exe` 생성
 5. GitHub Release에 설치 파일 첨부
+6. 웹 배포 가지 `release` 를 태그 커밋(+ 버전 파일)으로 옮김 → Render 가 웹을 다시 배포
+
+태그 이름과 버전 번호는 모든 제품 공통 원칙(`kynbeen/workspace` 의 `docs/principles/제품-이름과-버전.md`)을 따라
+`vMAJOR.MINOR.PATCH` 입니다. 앱 화면에는 이름 `Riffle` 만 보이고, 세부 버전은 이름 위에 마우스를
+올렸을 때, `/api/health`, 앱 로그, Windows 설치된 앱 목록에만 나옵니다. NotEditor 시절 태그는 `noteditor-v1.0.0`~`noteditor-v1.2.0` 으로 옮겼고
+버전 계산에서 빠집니다.
+
+### 태그를 붙이기 전에
+
+공통 원칙의 「새 태그 전에 할 일」을 따릅니다. Riffle 에서는 구체적으로:
+
+1. 문서를 코드에 맞춘다 — 이 README, [설치와 첫 사용](docs/설치와-첫-사용.md), [현재 상태](docs/current-status.md)
+   (기준일·버전·시험 개수), [백로그](docs/backlog.md)(이번 판으로 끝난 항목), [web/README.md](web/README.md).
+   걷은 기능·옛 주소는 지우고, 바뀐 것은 고치고, 적힌 곳이 없는 새 기능은 적는다. 날짜 붙은 `docs/handoffs/`·`docs/specs/` 는 고치지 않는다.
+2. `python -m unittest discover -s tests`, `web` 에서 `npm test`·`npm run build`(빌드가 바뀌면 커밋).
+3. `main` 을 푸시하고 GitHub Actions `test` 가 초록인지 본다. 빨간 채로 태그를 붙이지 않는다.
+4. `git tag v<버전>` → `git push origin v<버전>`. 끝나면 `https://riffle-9rnx.onrender.com/api/health` 의 `version` 이
+   새 버전인지 확인한다.
 
 ### 버전은 어디서 오나
 
@@ -231,13 +266,16 @@ docker run --rm -p 8000:8000 riffle
 
 | 상황 | `/api/health` 와 앱 로그가 말하는 버전 |
 | --- | --- |
-| `v0.5.0` 태그로 만든 릴리스 | `0.5.0` |
-| 태그 이후 3커밋 진행한 개발 체크아웃 | `0.5.0+3.gbf90fcf` |
+| `v1.0.0` 태그로 만든 설치 파일·웹 | `1.0.0` |
+| 태그 이후 3커밋 진행한 개발 체크아웃 | `1.0.0+3.gbf90fcf` |
 | 커밋하지 않은 수정이 있는 상태 | 뒤에 `.dirty` 가 붙음 |
 | 태그가 아직 없는 저장소 | `0.0.0+<커밋해시>` |
+| 버전 파일 없이 Render 에 올라간 이미지 | `0.0.0+<커밋해시 7자리>` |
 | 알 방법이 전혀 없을 때 | `0.0.0+unknown` |
 
 `RIFFLE_VERSION` 환경변수를 주면 그 값이 무엇보다 우선합니다.
+개발 체크아웃에서는 이전 빌드의 `_version.py`가 남아 있어도 현재 Git 커밋을 표시합니다.
+설치 파일은 빌드할 때 새긴 릴리스 버전을 표시합니다.
 
 로컬에서는 Python 개발 의존성과 Inno Setup 6을 설치한 뒤 같은 과정을 실행할 수 있습니다.
 

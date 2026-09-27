@@ -1,6 +1,6 @@
 # Riffle 현재 상태
 
-**기준일:** 2026-09-27 (Riffle 1.0.0 — 태그 `v1.0.0`. 설치 파일은 GitHub Release, 웹은 <https://riffle-9rnx.onrender.com>)
+**기준일:** 2026-09-27 (Riffle 1.0.0 — 태그 `v1.0.0`. 설치 파일은 GitHub Release, 웹은 <https://useriffle.onrender.com>)
 
 Riffle 1.0.0 은 아래 「아직 닫히지 않은 검증」의 실사용 확인을 **건너뛰고** 냈다(사용자 결정 2026-09-27).
 
@@ -55,7 +55,7 @@ Riffle 1.0.0 은 아래 「아직 닫히지 않은 검증」의 실사용 확인
 - 데스크톱·웹은 PyMuPDF를 유지한다. 개인 사용과 배포의 라이선스 조건은 README에 구분한다.
 - 버전은 깃 태그 `vMAJOR.MINOR.PATCH`(모든 제품 공통 원칙)에서 파생한다. NotEditor 시절 태그는 `noteditor-v1.0.0`~`-v1.2.0` 으로
   옮겨 버전 계산(`git describe --match "v[0-9]*"`)에서 뺐다. 개발 체크아웃은 남은 빌드 파일보다 `git describe` 를 먼저 본다.
-- 웹(Render 서비스 `riffle`)은 `release` 가지를 따라 배포되고, 그 가지는 릴리스 태그 때만 `release.yml` 이 옮긴다 — `main` 의
+- 웹(Render 작업공간 `riffle` 의 서비스 `useriffle`)은 `release` 가지를 따라 배포되고, 그 가지는 릴리스 태그 때만 `release.yml` 이 옮긴다 — `main` 의
   개발 중 커밋은 배포되지 않는다. 옛 서비스 `noteditor`(<https://not-editor.onrender.com>)는 `noteditor-1.2` 가지에 고정.
 
 ## 자동 검증

@@ -3,7 +3,7 @@
 Riffle은 PDF 문서 합치기와 Samsung Notes·Notewise·Goodnotes 6 필기 옮기기를 한 화면에서
 제공하는 도구입니다.
 Windows 데스크톱 앱과 Docker 기반 웹앱이 같은 PDF·필기 문서 처리 엔진과 같은 화면을 사용합니다.
-이 PC 에서는 데스크톱 앱을, 다른 기기에서는 웹(**<https://riffle-9rnx.onrender.com>**)을 씁니다.
+이 PC 에서는 데스크톱 앱을, 다른 기기에서는 웹(**<https://useriffle.onrender.com>**)을 씁니다.
 Android 앱은 2026-09-24 사용자 결정으로 걷었습니다(명세 `2026-09-24-01`).
 
 Riffle 은 NotEditor 의 새 이름입니다(2026-09-24). Riffle 1.0.0 은 별개 앱으로 설치되어, 이미 설치한
@@ -195,8 +195,8 @@ docker compose up --build
 업체 종속 설정은 없습니다. 저장소 루트의 `Dockerfile`을 빌드할 수 있는 Render, Fly.io,
 Cloud Run, Railway 또는 일반 컨테이너 서버에 배포할 수 있습니다.
 
-저장소의 `render.yaml`은 서울과 가까운 싱가포르 리전의 Render 웹 서비스 `riffle`
-(<https://riffle-9rnx.onrender.com>)을 정의합니다. 무료 인스턴스의 메모리 한계를 고려해 파일 하나당
+저장소의 `render.yaml`은 서울과 가까운 싱가포르 리전의 Render 웹 서비스 `useriffle`
+(<https://useriffle.onrender.com>, Render 작업공간 `riffle`)을 정의합니다. 무료 인스턴스의 메모리 한계를 고려해 파일 하나당
 업로드 한도는 100MB, 비활성 세션 만료는 1시간으로 설정합니다. 업로드와 변환은 모두 Render 컨테이너
 안에서 실행되며 사용자 PC에서 별도 서버를 실행할 필요가 없습니다.
 
@@ -206,7 +206,8 @@ Cloud Run, Railway 또는 일반 컨테이너 서버에 배포할 수 있습니�
 `riffle/_version.py` 를 한 커밋 더 얹어 싣습니다.
 
 옛 NotEditor 웹(`noteditor` 서비스, <https://not-editor.onrender.com>)은 `noteditor-1.2` 가지(= NotEditor 1.2.0)에
-고정돼 계속 돕니다. Render 무료 인스턴스 시간(월 750시간)은 작업공간 단위로 두 서비스가 나눠 씁니다.
+고정돼 계속 돕니다(Render 작업공간 `NotEditor`). Render 무료 인스턴스 시간(월 750시간)은 작업공간 단위라 두 서비스가 따로 씁니다.
+`riffle` 주소는 다른 계정이 잡고 있어 받을 수 없었습니다(Render·Fly.io·Railway·Netlify·Vercel 모두) — 그래서 `useriffle` 입니다.
 
 Render 설정은 대시보드 대신 Render CLI(`render`, [render-oss/cli](https://github.com/render-oss/cli))로도 봅니다 —
 `render login` 한 번 뒤 `render services`, `render deploys list <서비스 id>`, `render logs`.
@@ -256,7 +257,7 @@ docker run --rm -p 8000:8000 riffle
    걷은 기능·옛 주소는 지우고, 바뀐 것은 고치고, 적힌 곳이 없는 새 기능은 적는다. 날짜 붙은 `docs/handoffs/`·`docs/specs/` 는 고치지 않는다.
 2. `python -m unittest discover -s tests`, `web` 에서 `npm test`·`npm run build`(빌드가 바뀌면 커밋).
 3. `main` 을 푸시하고 GitHub Actions `test` 가 초록인지 본다. 빨간 채로 태그를 붙이지 않는다.
-4. `git tag v<버전>` → `git push origin v<버전>`. 끝나면 `https://riffle-9rnx.onrender.com/api/health` 의 `version` 이
+4. `git tag v<버전>` → `git push origin v<버전>`. 끝나면 `https://useriffle.onrender.com/api/health` 의 `version` 이
    새 버전인지 확인한다.
 
 ### 버전은 어디서 오나

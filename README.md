@@ -243,7 +243,7 @@ docker run --rm -p 8000:8000 riffle
 5. GitHub Release에 설치 파일 첨부
 6. 웹 배포 가지 `release` 를 태그 커밋(+ 버전 파일)으로 옮김 → Render 가 웹을 다시 배포
 
-태그 이름과 버전 번호는 모든 제품 공통 원칙(`kynbeen/workspace` 의 `docs/principles/제품-이름과-버전.md`)을 따라
+태그 이름과 버전 번호는 모든 제품 공통 원칙(`kynbeen/plait-workspace` 의 `docs/principles/제품-이름과-버전.md`)을 따라
 `vMAJOR.MINOR.PATCH` 입니다. 앱 화면에는 이름 `Riffle` 만 보이고, 세부 버전은 이름 위에 마우스를
 올렸을 때, `/api/health`, 앱 로그, Windows 설치된 앱 목록에만 나옵니다. NotEditor 시절 태그는 `noteditor-v1.0.0`~`noteditor-v1.2.0` 으로 옮겼고
 버전 계산에서 빠집니다.

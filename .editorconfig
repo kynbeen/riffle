@@ -1,0 +1,13 @@
+# 줄끝 정책(S9, 2026-10-22) — .gitattributes 와 같은 정책. 문자 인코딩·들여쓰기·마지막 개행은 정하지 않는다.
+root = true
+
+[*]
+end_of_line = lf
+trim_trailing_whitespace = true
+
+[*.{cmd,bat}]
+end_of_line = crlf
+
+# 줄 끝 공백이 뜻(Markdown 강제 줄바꿈)이거나 값일 수 있는 형식
+[*.{md,markdown,mdx,txt,csv,tsv,patch,diff,env,cmd,bat}]
+trim_trailing_whitespace = false

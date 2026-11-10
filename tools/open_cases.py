@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 CASES_DIR = ROOT / "tmp" / "케이스"
 DOWNLOADS = Path.home() / "Downloads"
-SLEEK = Path("C:/dev/sleek")
+SLEEK = Path("C:/dev/sleek-ops")
 NOTES = SLEEK / "output" / "병리학"
 
 
